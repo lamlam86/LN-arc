@@ -23,10 +23,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/hypnguyen1209/V-ARTEX/agent"
-	"github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/skill"
+	"github.com/hypnguyen1209/V-ARTEX/agent"
+	"github.com/hypnguyen1209/V-ARTEX/db"
 )
 
 // validSkillName checks the agentskills.io name constraints, widened so a skill can
@@ -2033,6 +2033,11 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 		}
 		b := strings.TrimRight(strings.TrimSuffix(strings.TrimSuffix(baseURL, "/chat/completions"), "/responses"), "/")
 		candidates = append(candidates, candidate{b + "/models", bearerHdr()})
+		// OpenCode Go serves chat at /inference/go/openai/v1 but lists models at
+		// /inference/go/v1/models; try that layout too.
+		if alt := strings.Replace(b, "/openai/v1", "/v1", 1); alt != b {
+			candidates = append(candidates, candidate{alt + "/models", bearerHdr()})
+		}
 	default: // anthropic
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com"

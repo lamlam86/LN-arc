@@ -65,9 +65,6 @@ func jsonbClean(b []byte) []byte {
 
 // Node is a typed reasoning node (= old task_nodes). kind ∈ goal|intent|finding|hint.
 type Node struct {
-	FindingID     int64           `json:"finding_id,omitempty"` // populated by finding-aware reads; never inferred from ID
-	FindingNodeID int64           `json:"finding_node_id,omitempty"`
-	TrafficCount  int             `json:"traffic_count,omitempty"`
 	ID            int64           `json:"id"`
 	Kind          string          `json:"kind"`
 	Payload       json.RawMessage `json:"payload"`
@@ -378,7 +375,6 @@ WHERE id=$2 AND exploration_id=$3 AND kind='intent' AND state=$4`, state, id, s.
 type IntentCleanup struct {
 	Intents    int64 `json:"intents"`
 	Facts      int64 `json:"facts"`
-	Findings   int64 `json:"findings"`
 	Activities int64 `json:"activities"`
 }
 
@@ -522,7 +518,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 	}
 
 	// Bucket by node kind.
-	var ids, intentIDs, findingIDs []int64
+	var ids, intentIDs []int64
 	for nid := range del {
 		ids = append(ids, nid)
 		switch kind[nid] {
@@ -531,9 +527,6 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 			out.Intents++
 		case KindFact:
 			out.Facts++
-		case KindFinding:
-			findingIDs = append(findingIDs, nid)
-			out.Findings++
 		}
 	}
 
@@ -568,13 +561,6 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 			}
 		}
 		if _, err := tx.Exec(`DELETE FROM side_question_sessions WHERE intent_id=$1`, iid); err != nil {
-			return out, err
-		}
-	}
-
-	// Delete findings table rows before finding nodes to avoid node_id=NULL orphans.
-	for _, fid := range findingIDs {
-		if _, err := tx.Exec(`DELETE FROM findings WHERE node_id=$1`, fid); err != nil {
 			return out, err
 		}
 	}
@@ -1024,114 +1010,6 @@ func (s *ExplorationStore) FactsYielded(intentID int64) ([]int64, error) {
 	return ids, rows.Err()
 }
 
-// FindingLineage returns the sub-DAG that leads FROM the exploration root TO the
-// given node: the node itself plus all its ancestors (nodes reverse-reachable by
-// following edges backward), and every edge whose both endpoints are in that set.
-// Used to render "how this finding was reached" — origin → … → finding. Returns
-// empty (not error) for a nonexistent node.
-func (s *ExplorationStore) FindingLineage(nodeID int64) ([]*Node, []Edge, error) {
-	// anc = the node + everything that can reach it via edges (walk src<-dst).
-	nodeRows, err := s.db.Query(`
-WITH RECURSIVE anc(id) AS (
-    SELECT $2::bigint
-  UNION
-    SELECT e.src_id
-    FROM exploration_edges e
-    JOIN anc ON e.dst_id = anc.id
-    WHERE e.exploration_id = $1
-)
-SELECT `+nodeCols+`
-FROM exploration_nodes
-WHERE exploration_id = $1 AND id IN (SELECT id FROM anc)
-ORDER BY id`, s.expID, nodeID)
-	if err != nil {
-		return nil, nil, err
-	}
-	nodes, err := scanNodes(nodeRows)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(nodes) == 0 {
-		return nil, nil, nil
-	}
-	// edges among the ancestor set only (the lineage's internal relations).
-	edgeRows, err := s.db.Query(`
-WITH RECURSIVE anc(id) AS (
-    SELECT $2::bigint
-  UNION
-    SELECT e.src_id
-    FROM exploration_edges e
-    JOIN anc ON e.dst_id = anc.id
-    WHERE e.exploration_id = $1
-)
-SELECT src_id, rel, dst_id
-FROM exploration_edges
-WHERE exploration_id = $1
-  AND src_id IN (SELECT id FROM anc)
-  AND dst_id IN (SELECT id FROM anc)`, s.expID, nodeID)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer edgeRows.Close()
-	var edges []Edge
-	for edgeRows.Next() {
-		var e Edge
-		if err := edgeRows.Scan(&e.From, &e.Rel, &e.To); err != nil {
-			return nil, nil, err
-		}
-		edges = append(edges, e)
-	}
-	return nodes, edges, edgeRows.Err()
-}
-
-// FindingIntents maps each finding id to the intent that produced it (the
-// intent --yields--> finding edge; report_finding links it). Findings with no
-// producing intent are absent. Precise (JOIN, no edge-scan limit).
-func (s *ExplorationStore) FindingIntents() (map[int64]int64, error) {
-	rows, err := s.db.Query(`SELECT e.dst_id, e.src_id
-FROM exploration_edges e
-JOIN exploration_nodes n ON n.id = e.dst_id AND n.exploration_id = e.exploration_id
-WHERE e.exploration_id=$1 AND e.rel=$2 AND n.kind='finding'`, s.expID, RelYields)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[int64]int64{}
-	for rows.Next() {
-		var findingID, intentID int64
-		if err := rows.Scan(&findingID, &intentID); err != nil {
-			return nil, err
-		}
-		out[findingID] = intentID
-	}
-	return out, rows.Err()
-}
-
-// FindingIntentsTerminal is the inherited-history variant: it returns finding
-// lineage only when the producing intent has reached an immutable terminal
-// state. This keeps a source task's live worker topology private.
-func (s *ExplorationStore) FindingIntentsTerminal() (map[int64]int64, error) {
-	rows, err := s.db.Query(`SELECT e.dst_id, e.src_id
-	FROM exploration_edges e
-	JOIN exploration_nodes finding ON finding.id=e.dst_id AND finding.exploration_id=e.exploration_id
-	JOIN exploration_nodes intent ON intent.id=e.src_id AND intent.exploration_id=e.exploration_id
-	WHERE e.exploration_id=$1 AND e.rel=$2 AND finding.kind='finding'
-	  AND intent.kind='intent' AND intent.state IN ('done','blocked','exhausted','stopped')`, s.expID, RelYields)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[int64]int64{}
-	for rows.Next() {
-		var findingID, intentID int64
-		if err := rows.Scan(&findingID, &intentID); err != nil {
-			return nil, err
-		}
-		out[findingID] = intentID
-	}
-	return out, rows.Err()
-}
-
 // Frontier returns open intents ordered by priority desc then id (FIFO tiebreak).
 func (s *ExplorationStore) Frontier(limit int) ([]*Node, error) {
 	if limit <= 0 {
@@ -1293,17 +1171,12 @@ func (d *DB) LastActivityAll() (map[int64]int64, error) {
 // GoalCounts is the goal summary for one exploration.
 type GoalCounts struct{ Total, Met int }
 
-// FindingSeverityCounts breaks a task's findings down by severity for the task
-// list (empty severities or values outside the allowlist do not enter any bucket).
-type FindingSeverityCounts struct{ Critical, High, Medium, Low int }
-
 // TaskListMetrics contains the aggregates rendered in task lists.
 type TaskListMetrics struct {
 	Tokens         TokenUsage
 	LastActivity   int64
 	Goals          GoalCounts
-	RunningIntents int                   // Number of kind='intent', state='running' nodes: currently running workers.
-	Findings       FindingSeverityCounts // Finding counts for this task from the findings table, grouped by severity.
+	RunningIntents int // Number of kind='intent', state='running' nodes: currently running workers.
 }
 
 // TaskListMetricsAll returns list aggregates for every live task in one query.
@@ -1319,11 +1192,7 @@ func (d *DB) TaskListMetricsAll() (map[int64]TaskListMetrics, error) {
 		       COALESCE(latest_activity.created_at,0),
 		       COALESCE(goal_metrics.total,0),
 		       COALESCE(goal_metrics.met,0),
-		       COALESCE(intent_metrics.running,0),
-		       COALESCE(finding_metrics.critical,0),
-		       COALESCE(finding_metrics.high,0),
-		       COALESCE(finding_metrics.medium,0),
-		       COALESCE(finding_metrics.low,0)
+		       COALESCE(intent_metrics.running,0)
 		FROM tasks task
 		LEFT JOIN LATERAL (
 			SELECT SUM(input_tokens) AS input_tokens,
@@ -1351,14 +1220,6 @@ func (d *DB) TaskListMetricsAll() (map[int64]TaskListMetrics, error) {
 			FROM exploration_nodes
 			WHERE exploration_id=task.exploration_id AND kind='intent' AND state='running'
 		) intent_metrics ON true
-		LEFT JOIN LATERAL (
-			SELECT COUNT(*) FILTER (WHERE severity='critical') AS critical,
-			       COUNT(*) FILTER (WHERE severity='high')     AS high,
-			       COUNT(*) FILTER (WHERE severity='medium')   AS medium,
-			       COUNT(*) FILTER (WHERE severity='low')      AS low
-			FROM findings
-			WHERE task_id=task.id
-		) finding_metrics ON true
 		WHERE task.deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
@@ -1378,10 +1239,6 @@ func (d *DB) TaskListMetricsAll() (map[int64]TaskListMetrics, error) {
 			&metrics.Goals.Total,
 			&metrics.Goals.Met,
 			&metrics.RunningIntents,
-			&metrics.Findings.Critical,
-			&metrics.Findings.High,
-			&metrics.Findings.Medium,
-			&metrics.Findings.Low,
 		); err != nil {
 			return nil, err
 		}
@@ -2011,11 +1868,4 @@ func (s *ExplorationStore) ActivityByIDsForTerminalIntents(ids []int64) ([]Activ
 		out = append(out, a)
 	}
 	return out, rows.Err()
-}
-
-// AddStandaloneFinding writes a finding to the standalone findings table, which
-// persists across task deletion (task_id / node_id become NULL when the task or
-// exploration node is deleted). taskID and nodeID may be 0 (stored as NULL).
-func (s *ExplorationStore) AddStandaloneFinding(taskID, nodeID int64, vulnclass, name, severity, summary, evidence, worker string, assetIDs []int64) (int64, error) {
-	return s.db.AddFinding(taskID, nodeID, vulnclass, name, severity, summary, evidence, worker, assetIDs)
 }

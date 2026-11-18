@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hypnguyen1209/V-ARTEX/db"
-	"github.com/hypnguyen1209/V-ARTEX/intercept"
 	"github.com/Autumn-27/norma/agentcore"
 	"github.com/Autumn-27/norma/harness"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/db"
+	"github.com/hypnguyen1209/V-ARTEX/intercept"
 )
 
 // Worker is an LLM work agent (docs §4.4): it claims ONE intent, completes it
@@ -52,17 +52,16 @@ type WebSearchOpts struct {
 }
 
 type Worker struct {
-	findingRecorder FindingRecorder
-	prov            llm.Provider
-	model           string
-	workDir         string
-	proxyAddr       string
-	proxyCACert     string            // recording proxy's CA cert path (for WebFetch HTTPS verify)
-	webSearch       WebSearchOpts     // web_search tool backend selection (off by default)
-	tx              *transcript.Store // raw LLM conversation persistence (nil = off)
-	window          int               // context window in tokens (for compaction)
-	windowFn        func() int        // optional dynamic task-chain minimum
-	maxTurns        int               // max agent turns per run (0 = unlimited)
+	prov        llm.Provider
+	model       string
+	workDir     string
+	proxyAddr   string
+	proxyCACert string            // recording proxy's CA cert path (for WebFetch HTTPS verify)
+	webSearch   WebSearchOpts     // web_search tool backend selection (off by default)
+	tx          *transcript.Store // raw LLM conversation persistence (nil = off)
+	window      int               // context window in tokens (for compaction)
+	windowFn    func() int        // optional dynamic task-chain minimum
+	maxTurns    int               // max agent turns per run (0 = unlimited)
 	// runTimeout is the wall-clock budget for the main exploration of one intent
 	// (0 = unlimited). When it fires, the run is cut and a settlement round is
 	// forced so already-identified facts get written back instead of being lost.
@@ -151,7 +150,7 @@ func (w *Worker) SetRunTimeout(run time.Duration) {
 // settleWrapUpPrompt is injected by the SDK settlement phase when a worker hits its
 // turn/time budget: stop probing, write back what was found, then end with a
 // plain-text one-liner (which becomes this run's displayed result).
-const settleWrapUpPrompt = "Your run is about to end because its budget is exhausted. Run no more commands or probes. In order: (1) Persist every identified but unsaved result, using insert_assets for new assets, record_fact for exploration conclusions/facts, and report_finding for confirmed vulnerabilities; (2) Finish with a separate single plain-text sentence summarizing your actions and key conclusions. This sentence becomes the displayed result of the run, so you must output it."
+const settleWrapUpPrompt = "Your run is about to end because its budget is exhausted. Run no more commands or probes. In order: (1) Persist every identified but unsaved result, using insert_assets for new assets and record_fact for exploration conclusions/facts; (2) Finish with a separate single plain-text sentence summarizing your actions and key conclusions. This sentence becomes the displayed result of the run, so you must output it."
 
 func NewWorker(prov llm.Provider, model, workDir string, tx *transcript.Store, window, maxTurns int, extra ...actool.CoreTool) *Worker {
 	return &Worker{prov: prov, model: model, workDir: workDir, tx: tx, window: window, maxTurns: maxTurns, extraTools: extra}
@@ -227,17 +226,18 @@ func proxyEnv(proxyAddr, caCert string) []string {
 // prompt, seeded into agent_prompts. The trafficTool block and intermediate artifact output rules
 // are NOT here — they are code-owned and appended by workerSystem after rendering
 // (sections [B]/[C]), so editing the DB body can never drop them.
-const workerDefaultTmpl = `You are the execution agent in an authorized penetration testing system. You receive **one intent**, expressed as a one-sentence exploration direction. Your sole responsibility is to **complete this intent, record discoveries in the knowledge graph, then stop and return.**
+const workerDefaultTmpl = `You are the execution agent in an authorized reconnaissance system. You receive one intent, expressed as a one-sentence exploration direction. Your sole responsibility is to complete this intent, record discoveries in the knowledge graph, then stop and return.
 
 **Operating boundaries:**
-1. **Work only on your assigned intent.** If you notice a promising lead outside it (a leaked path, a connection to other assets, or another exploitation chain), mention it briefly in a fact's summary for the planner.
-2. An initially filtered payload, 404, or injection without visible output does not exhaust the direction. Try all reasonable bypasses for this intent before concluding.
-3. Operate only within authorized scope. Any operating constraints at the top of the system prompt have highest priority: check every command/probe before executing, and do not violate a constraint even if the action belongs to your intent.
+1. **Reconnaissance only.** Never exploit, never attack, never modify target state. Prohibited: injection payloads, authentication bypass, brute force, shell/webshell upload, deserialization, SSRF/XXE/LFI/RFI, privilege escalation, lateral movement, data exfiltration, destructive requests, and denial of service. Allowed: read-only HTTP GET/HEAD, DNS, port/service discovery, fingerprinting, safe enumeration, and passive OSINT.
+2. **Work only on your assigned intent.** If you notice a promising lead outside it, mention it briefly in a fact's summary for the planner.
+3. An initial 404, timeout, or empty response does not exhaust the direction. Try reasonable read-only variants and alternative sources before concluding.
+4. Operate only within authorized scope. Any operating constraints at the top of the system prompt have highest priority.
 
-**Record discoveries as you make them.** Only persisted graph records count; unsaved thoughts or prose do not. Save each result promptly before turn exhaustion can discard it. Use the correct graph:
-- **New assets/resources → insert_assets (asset graph)**: register assets themselves, such as subdomains/services/endpoints/fingerprints/credentials. Record exploration conclusions and judgments with record_fact instead.
-- **Exploration conclusions/facts → record_fact (exploration graph, include intent_id)**: combine multiple observations into **one fact** with a one-sentence summary and supporting detail grounded in actual execution. Normally one fact per intent; do not create a fact per attribute or inflate the graph. Merge material into detail by default. Use separate entries in the facts array only for truly independent conclusions that cannot be combined, a rare exception. **Record only new information**; do not rephrase existing facts or duplicate confirmation without new evidence. **Record only actual observations** with concise evidence (command plus one or two decisive output lines; details belong in detail) and confidence (observed=directly seen / inferred=deduced from behavior).
-- **Confirmed vulnerabilities → report_finding (exploration graph, with PoC and intent_id)**: **use only after actually triggering the vulnerability in this run and obtaining reproducible request/response or command output evidence**. Version/fingerprint CVE matches, seemingly injectable parameters, and inferences from external vulnerability databases/changelogs/code diffs are not confirmation. CVE lookups or patch version comparisons cannot replace a real trigger. If suspicious behavior cannot be triggered, use record_fact for an inferred fact describing the suspicion and why it could not be triggered, for the planner to assess.
+**Record discoveries as you make them.** Only persisted graph records count; unsaved thoughts or prose do not. Save each result promptly before turn exhaustion can discard it.
+- **New assets/resources → insert_assets (asset graph):** register subdomains, IPs, services, sites, endpoints, technologies, certificates, and credentials. Use list_assets to avoid duplicates.
+- **Recon conclusions/facts → record_fact (exploration graph, include intent_id):** combine observations into one fact with a one-sentence summary and supporting detail grounded in actual execution. Include concise evidence (command plus one or two decisive output lines) and confidence (observed = directly seen / inferred = deduced from behavior). Record only new information.
+- **Suspicious behavior → record_fact with confidence=inferred**, describing exactly what was observed and why it may be interesting. Do not attempt to exploit it; the planner will decide whether more recon is warranted.
 
 After completing the intent, summarize your actions and recorded facts in one English sentence.`
 
@@ -313,7 +313,7 @@ func intentAssetIDs(intent *db.Node) []int64 {
 }
 
 func renderIntentTask(intent *db.Node) string {
-	return fmt.Sprintf("\n\n[Your assigned intent (your only task this run: execute only this intent, produce only facts, and stop when done)]:\n%s\nIntent id: %d (pass this to record_fact / report_finding when writing back)", string(intent.Payload), intent.ID)
+	return fmt.Sprintf("\n\n[Your assigned intent (your only task this run: execute only this intent, produce only facts, and stop when done)]:\n%s\nIntent id: %d (pass this to record_fact when writing back)", string(intent.Payload), intent.ID)
 }
 
 // renderWorkerGraphOverview folds the global situational snapshot into the worker's
@@ -332,14 +332,14 @@ func renderWorkerGraphOverview(data map[string]any) string {
 	}
 	return "\n\n[Global exploration overview (read-only context for your assigned intent)]:\n" +
 		"This is the current exploration overview for the whole task. Use it to see what others have already discovered and avoid duplication, and to understand how your own intent relates to the wider task.\n" +
-		"**Think broadly** while investigating this intent. The boundary is execution: do not actually execute other intents; other workers handle those under the planner's direction. **Record every valuable lead as a fact for the planner**, including cross-asset relationships, potential entry points to another exploit chain, or suspicious patterns across the task. This is an important required output. Prefer reporting an extra lead for the planner to assess over withholding it.\n" +
+		"**Think broadly** while investigating this intent. The boundary is execution: do not actually execute other intents; other workers handle those under the planner's direction. **Record every valuable lead as a fact for the planner**, including cross-asset relationships, potential entry points to another recon direction, or suspicious patterns across the task. This is an important required output. Prefer reporting an extra lead for the planner to assess over withholding it.\n" +
 		string(b)
 }
 
 // Execute runs one intent. hooks (the per-task Guard) gates every tool call; may
 // be nil. emit, if non-nil, receives one ActivityRecord per execution step.
 // notifyFinding, if non-nil, is called (intentID, summary) when this worker writes
-// a finding (report_finding) so the task's planner wakes mid-flight — with context
+// a finding so the task's planner wakes mid-flight — with context
 // on which intent found what — instead of waiting for the worker to finish.
 // Returns the terminal reason (so the engine can distinguish completed vs
 // max_turns) and a per-kind breakdown of what was written back (so an intent that
@@ -359,16 +359,14 @@ func (w *Worker) ExecuteWithMessage(ctx context.Context, name string, taskID int
 
 func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.AssetStore, ts *db.ExplorationStore, intent *db.Node, hooks harness.HookRunner, emit func(db.Activity), enr EnrichTrigger, notifyFinding func(int64, string), requestID, message string) (harness.TerminalReason, WriteCounts, error) {
 	tsx := NewToolSet(ts, name)
-	tsx.SetFindingRecorder(w.findingRecorder)
 	tsx.SetTaskID(taskID)
 	coverageEnabled := as == nil || as.CoverageEnabled(taskID)
 	tsx.SetCoverageEnabled(coverageEnabled)
 	if as != nil {
 		tsx.SetAssetStore(as, as.Companies())
 	}
-	tsx.SetOwnerNode(intent.ID)         // assets this worker discovers anchor to its intent → visible to the task
-	tsx.SetEnrich(enr)                  // async DNS/HTTP auto-completion for assets this worker writes
-	tsx.SetNotifyFinding(notifyFinding) // report_finding wakes the planner immediately when stored, including the intent and finding.
+	tsx.SetOwnerNode(intent.ID) // assets this worker discovers anchor to its intent → visible to the task
+	tsx.SetEnrich(enr)          // async DNS/HTTP auto-completion for assets this worker writes
 	// base = built-in worker tools ∪ host tools (traffic) ∪ default tools (incl. Bash);
 	// then augment with the agent's visible skills/MCP. During the SDK settlement
 	// phase, Bash is hidden via Settlement.DisabledTools (no local gating needed).

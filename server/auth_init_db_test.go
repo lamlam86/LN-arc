@@ -282,7 +282,7 @@ func TestAuthInitIsThrottledDB(t *testing.T) {
 func TestPasswordChangeReturnsFreshTokenAndRevokesOldTokensDB(t *testing.T) {
 	rig := newAuthTestRig(t)
 	first := rig.initialize()
-	code, body := rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "ARTEX", "password": "operator-password-123"})
+	code, body := rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "LN-AI", "password": "operator-password-123"})
 	rig.expect(http.StatusOK, code, body, "")
 	second := rig.responseToken(body)
 	code, body = rig.do(http.MethodPost, "/api/auth/change-password", first, map[string]any{
@@ -311,7 +311,7 @@ func TestPasswordChangeReturnsFreshTokenAndRevokesOldTokensDB(t *testing.T) {
 	rig.s.authMu.Unlock()
 	code, body = rig.do(http.MethodGet, "/api/ping", fresh, nil)
 	rig.expect(http.StatusUnauthorized, code, body, "Token is invalid or expired")
-	code, body = rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "ARTEX", "password": "reset-password-123"})
+	code, body = rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "LN-AI", "password": "reset-password-123"})
 	rig.expect(http.StatusOK, code, body, "")
 	code, body = rig.do(http.MethodGet, "/api/ping", rig.responseToken(body), nil)
 	rig.expect(http.StatusOK, code, body, "")
@@ -335,7 +335,7 @@ func TestAuthLoginAndPasswordChangeShareLimiterDB(t *testing.T) {
 		})
 		rig.expect(http.StatusUnauthorized, code, body, "Current password is incorrect")
 	}
-	code, body = rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "ARTEX", "password": "operator-password-123"})
+	code, body = rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "LN-AI", "password": "operator-password-123"})
 	rig.expect(http.StatusTooManyRequests, code, body, "Too many failed attempts; try again later")
 	rig.resetLimiter()
 	for i := 0; i < 5; i++ {
@@ -352,11 +352,11 @@ func TestAuthBootstrapEnvironmentPasswordDB(t *testing.T) {
 	const password = "environment-password-123"
 	t.Setenv(adminPasswordEnv, password)
 	rig.s.bootstrapAuth()
-	code, body := rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "ARTEX", "password": password})
+	code, body := rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "LN-AI", "password": password})
 	rig.expect(http.StatusOK, code, body, "")
 	t.Setenv(adminPasswordEnv, "replacement-password-123")
 	rig.s.bootstrapAuth()
-	code, body = rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "ARTEX", "password": password})
+	code, body = rig.do(http.MethodPost, "/api/auth/login", "", map[string]any{"username": "LN-AI", "password": password})
 	rig.expect(http.StatusOK, code, body, "")
 	if strings.Contains(logs.String(), password) {
 		t.Fatal("environment password leaked to logs")
@@ -627,7 +627,7 @@ func TestAuthParkedRequestsRecheckCooldownDB(t *testing.T) {
 				bearer = rig.initialize()
 			}
 			reader, done := parkedAuthRequest(t, rig, path, bearer,
-				`"username":"ARTEX","password":"wrong-password-123","setup_token":"wrong-token","old_password":"wrong-password-123","new_password":"next-password-123"}`)
+				`"username":"LN-AI","password":"wrong-password-123","setup_token":"wrong-token","old_password":"wrong-password-123","new_password":"next-password-123"}`)
 			peer := clientKey(httptest.NewRequest(http.MethodPost, path, nil))
 			for i := 0; i < 5; i++ {
 				rig.s.limiter().failure(peer)
@@ -652,7 +652,7 @@ func TestAuthConcurrentBadLoginsStopAtFailureThresholdDB(t *testing.T) {
 	readers := make([]*authParkedBody, 0, count)
 	responses := make([]<-chan *httptest.ResponseRecorder, 0, count)
 	for i := 0; i < count; i++ {
-		reader, done := parkedAuthRequest(t, rig, "/api/auth/login", "", `"username":"ARTEX","password":"wrong-password-123"}`)
+		reader, done := parkedAuthRequest(t, rig, "/api/auth/login", "", `"username":"LN-AI","password":"wrong-password-123"}`)
 		readers, responses = append(readers, reader), append(responses, done)
 	}
 	for _, reader := range readers {

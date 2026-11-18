@@ -39,7 +39,6 @@ func TestLogLevelsRecognizeEnglishAndLegacyMessages(t *testing.T) {
 
 func TestChatMentionEnglishAndLegacyLabels(t *testing.T) {
 	for _, tc := range []struct{ english, legacy, kind string }{
-		{"Finding", "\u6f0f\u6d1e", "finding"},
 		{"Asset", "\u8d44\u4ea7", "asset"},
 		{"Company", "\u4f01\u4e1a", "company"},
 		{"Endpoint", "\u63a5\u53e3", "endpoint"},

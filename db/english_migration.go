@@ -40,7 +40,6 @@ var englishPromptVars = []struct {
 	{"planner", "AssetSummary", "\u8d44\u4ea7\u8ba1\u6570/\u7c7b\u578b\u5206\u5e03\u6458\u8981(\u53ef\u9009)", "Asset counts and type distribution summary (optional)", "domain:3 ip:5 site:2", "domain:3 ip:5 site:2", "distilled"},
 	{"mainagent", "Goal", "\u5f53\u524d\u4efb\u52a1\u76ee\u6807", "Current task objective", "\u62ff\u4e0b example.com \u7684\u7ba1\u7406\u5458\u6743\u9650", "Obtain administrator access to example.com", "exploration"},
 	{"mainagent", "AssetSummary", "\u5f00\u5c40\u6001\u52bf\u6458\u8981(\u53ef\u9009)", "Initial situation summary (optional)", "domain:3 ip:5", "domain:3 ip:5", "distilled"},
-	{"mainagent", "FindingsSummary", "\u5df2\u786e\u8ba4\u6f0f\u6d1e\u6458\u8981(\u53ef\u9009)", "Confirmed vulnerability summary (optional)", "high:1 medium:2", "high:1 medium:2", "distilled"},
 	{"worker", "ProxyAddr", "\u8bb0\u5f55\u4ee3\u7406\u5730\u5740(\u9a71\u52a8 if \u53cc\u6587\u6848)", "Recording proxy address (controls conditional prompt text)", "127.0.0.1:8080", "127.0.0.1:8080", "runtime"},
 	{"worker", "WorkerName", "worker \u81ea\u6211\u6807\u8bc6(\u53ef\u9009)", "Worker self-identification (optional)", "worker-1", "worker-1", "runtime"},
 }

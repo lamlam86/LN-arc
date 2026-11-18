@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ARTEX administrator password reset script
+# LN-ARC administrator password reset script
 #
-# The login username is always ARTEX. The password is stored as a bcrypt hash under
+# The login account is fixed (the UI asks only for the password). The password is stored as a bcrypt hash under
 # auth.password_hash in the database settings table. This script connects to the database,
 # generates a bcrypt hash with pgcrypto, and writes it to that key, compatible with backend login verification (golang.org/x/crypto/bcrypt).
 #
@@ -124,7 +124,7 @@ info "Deployment mode: $MODE"
 
 # ---- Collect the new password -----------------------------------------------------------
 if [[ -z "$NEWPASS" ]]; then
-  read -r -s -p "Enter the new password (username is always ARTEX): " NEWPASS; echo >&2
+  read -r -s -p "Enter the new password: " NEWPASS; echo >&2
   [[ -n "$NEWPASS" ]] || die "Password must not be empty"
   read -r -s -p "Enter it again to confirm: " NEWPASS2; echo >&2
   [[ "$NEWPASS" == "$NEWPASS2" ]] || die "Passwords do not match"
@@ -178,7 +178,7 @@ if [[ "$MODE" == "local" ]]; then
 
   info "Target database: $target"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "Reset the ARTEX password in this database? [y/N] " ans
+    read -r -p "Reset the LN-ARC password in this database? [y/N] " ans
     [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Cancelled"
   fi
 
@@ -212,7 +212,7 @@ else
 
   info "Target: psql -U $DUSER -d $DNAME in container $CONTAINER (exec=$EXEC_KIND)"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "Reset the ARTEX password in this container database? [y/N] " ans
+    read -r -p "Reset the LN-ARC password in this container database? [y/N] " ans
     [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Cancelled"
   fi
 
@@ -232,4 +232,4 @@ else
 fi
 
 unset ARTEX_RESET_NEWPASS
-echo "✓ ARTEX administrator password reset. Log in with username ARTEX and the new password (no service restart needed)."
+echo "✓ LN-ARC administrator password reset. Log in with the new password (no service restart needed)."

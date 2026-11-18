@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hypnguyen1209/V-ARTEX/db"
 	actool "github.com/Autumn-27/norma/tool"
+	"github.com/hypnguyen1209/V-ARTEX/db"
 )
 
 // assetInterceptCandidates extracts domain/IP/URL candidates from an incoming asset for interception matching.
@@ -643,9 +643,7 @@ func splitLines(s string) []string {
 // WorkerTools returns the tool set for a work agent.
 func (t *ToolSet) WorkerTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		// Retain list_findings so confirmed findings can be checked before reporting, avoiding duplicates.
-		t.listFindings(),
-		t.addFinding(), t.recordFact(),
+		t.recordFact(),
 		// asset management (handlers guard nil store internally).
 		// Workers lack add_company_scope; company scope belongs to planning/main/Auto, while workers execute exploration.
 		t.insertAssets(), t.listAssets(),
@@ -663,7 +661,7 @@ func (t *ToolSet) WorkerTools() []actool.CoreTool {
 // MainAgentTools returns the human-interface tool set.
 func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
+		t.graphOverview(), t.listFacts(), t.nodeDetail(),
 		t.expandDigest(), // cold-digest §6.1
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.addHint(), t.addIntent(),
 		// steer_work: humans can inject real-time steering into running work without interruption or lost progress.
@@ -674,7 +672,7 @@ func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 		t.setConstraints(),
 		// asset management (handlers guard nil store internally)
 		t.insertAssets(), t.addCompanyScope(), t.listAssets(),
-		t.addFinding(), t.recordFact(),
+		t.recordFact(),
 		t.addTaskScope(),
 		// list_untested_assets: inspect scoped untested assets by type/page and decide whether further testing is needed.
 		t.listUntestedAssets(),

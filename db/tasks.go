@@ -57,7 +57,6 @@ type Task struct {
 type TaskDeleteResult struct {
 	AssetsDeleted     int64
 	AssetsDetached    int64
-	FindingsDeleted   int64
 	LLMRecordsDeleted int64
 }
 
@@ -529,13 +528,13 @@ func (d *DB) DeleteTask(id int64) error {
 }
 
 // DeleteTaskCascade hard-deletes a task and its exploration subgraph
-// (nodes/edges/activity via ON DELETE CASCADE). Optional standalone findings and
-// assets owned only by this task are deleted in the same transaction; shared
-// assets are retained and only have this task id detached. deleteLLMRecords is
-// optional to preserve callers of the original two-option API.
-func (d *DB) DeleteTaskCascade(id int64, deleteAssets, deleteFindings bool, deleteLLMRecords ...bool) (TaskDeleteResult, error) {
+// (nodes/edges/activity via ON DELETE CASCADE). Assets owned only by this task
+// are deleted in the same transaction; shared assets are retained and only have
+// this task id detached. deleteLLMRecords is optional to preserve callers of the
+// original two-option API.
+func (d *DB) DeleteTaskCascade(id int64, deleteAssets bool, deleteLLMRecords ...bool) (TaskDeleteResult, error) {
 	deleteRecords := len(deleteLLMRecords) > 0 && deleteLLMRecords[0]
-	return d.DeleteTaskCascadePrepared(id, deleteAssets, deleteFindings, deleteRecords, nil)
+	return d.DeleteTaskCascadePrepared(id, deleteAssets, deleteRecords, nil)
 }
 
 // DeleteTaskCascadePrepared coordinates reversible external deletion with the
@@ -549,7 +548,7 @@ func (d *DB) DeleteTaskCascade(id int64, deleteAssets, deleteFindings bool, dele
 // external work that its callback staged successfully.
 func (d *DB) DeleteTaskCascadePrepared(
 	id int64,
-	deleteAssets, deleteFindings, deleteLLMRecords bool,
+	deleteAssets, deleteLLMRecords bool,
 	prepare func(TaskDeletePreparation) error,
 ) (TaskDeleteResult, error) {
 	var result TaskDeleteResult
@@ -627,13 +626,6 @@ DELETE FROM assets a USING deletable d WHERE a.id=d.id`, id, expID)
 			return result, err
 		}
 		result.AssetsDetached, _ = res.RowsAffected()
-	}
-	if deleteFindings {
-		res, err := tx.Exec(`DELETE FROM findings WHERE task_id = $1`, id)
-		if err != nil {
-			return result, err
-		}
-		result.FindingsDeleted, _ = res.RowsAffected()
 	}
 	if deleteLLMRecords {
 		res, err := tx.Exec(`DELETE FROM llm_records WHERE COALESCE(task_id,'')=$1`, strconv.FormatInt(id, 10))

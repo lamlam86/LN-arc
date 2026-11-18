@@ -42,12 +42,9 @@ import type { LLMProfile, Task } from "@/lib/types";
 import { AssetsTab } from "./_tabs/assets-tab";
 import { BroadcastTab } from "./_tabs/broadcast-tab";
 import { CoverageGraphTab } from "./_tabs/coverage-graph-tab";
-import { FindingsTab } from "./_tabs/findings-tab";
 import { GraphTab } from "./_tabs/graph-tab";
 import { InterceptTab } from "./_tabs/intercept-tab";
 import { OverviewTab } from "./_tabs/overview-tab";
-import { ReportTab } from "./_tabs/report-tab";
-import { RetestsTab } from "./_tabs/retests-tab";
 import { SessionsTab } from "./_tabs/sessions-tab";
 
 const TABS = [
@@ -55,12 +52,9 @@ const TABS = [
   { value: "overview", label: "Overview" },
   { value: "graph", label: "Exploration Graph" },
   { value: "broadcast", label: "Broadcast" },
-  { value: "findings", label: "Findings" },
-  { value: "retests", label: "Retests" },
   { value: "assets", label: "Test Assets" },
   { value: "coverage", label: "Asset Coverage" },
   { value: "intercept", label: "Interception Approvals" },
-  { value: "report", label: "Report" },
 ];
 
 function taskProfileIDs(task: Task): string[] {
@@ -432,12 +426,6 @@ function TaskDetailInner() {
         <TabsContent value="broadcast" className="mt-0">
           <BroadcastTab taskId={id} />
         </TabsContent>
-        <TabsContent value="findings" className="mt-0">
-          <FindingsTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="retests" className="mt-0">
-          <RetestsTab key={id} taskId={id} />
-        </TabsContent>
         <TabsContent value="assets" className="mt-0">
           <AssetsTab taskId={id} />
         </TabsContent>
@@ -446,9 +434,6 @@ function TaskDetailInner() {
         </TabsContent>
         <TabsContent value="intercept" className="mt-0">
           <InterceptTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="report" className="mt-0">
-          <ReportTab taskId={id} />
         </TabsContent>
       </div>
     </Tabs>

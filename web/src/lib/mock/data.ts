@@ -65,7 +65,6 @@ export const tasks: Task[] = [
     paused: false,
     active: true,
     in_flight: 3,
-    findings: { critical: 1, high: 2, medium: 1, low: 0 },
     stalled: false,
     goals_total: 5,
     goals_met: 2,
@@ -91,7 +90,6 @@ export const tasks: Task[] = [
     paused: false,
     active: false,
     in_flight: 2,
-    findings: { critical: 0, high: 1, medium: 1, low: 0 },
     stalled: false,
     goals_total: 4,
     goals_met: 1,
@@ -2982,7 +2980,7 @@ export const trafficDetail: TrafficDetail = {
   req: `GET /v1/orders?id=1002 HTTP/1.1
 Host: api.acme.com
 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
-User-Agent: ARTEX-worker/1.0
+User-Agent: LN-ARC-worker/1.0
 Accept: application/json
 
 `,
@@ -3239,13 +3237,13 @@ const promptVersions: PromptVersion[] = [
     version: 3,
     ts: T("2026-07-25T10:00:00Z"),
     note: "Stronger guidance for authorization testing",
-    template_text: "You are ARTEX's planner…",
+    template_text: "You are LN-ARC's planner…",
   },
   {
     version: 2,
     ts: T("2026-07-20T10:00:00Z"),
     note: "Initial revision",
-    template_text: "You are ARTEX's planner (v2)…",
+    template_text: "You are LN-ARC's planner (v2)…",
   },
 ];
 
@@ -3253,7 +3251,7 @@ export function agentDetail(key: string): AgentDetail {
   const a = agents.find((x) => x.key === key) ?? agents[1];
   return {
     agent: a,
-    prompt: `You are ARTEX's ${a.name}.\nGoal: {{.Goal}}\nAsset overview: {{.AssetSummary}}\nRoute hint: {{.RouteHint}}\nAdvance exploration using this information and write results back to the graph through tools.`,
+    prompt: `You are LN-ARC's ${a.name}.\nGoal: {{.Goal}}\nAsset overview: {{.AssetSummary}}\nRoute hint: {{.RouteHint}}\nAdvance exploration using this information and write results back to the graph through tools.`,
     variables: promptVars,
     versions: promptVersions,
     visibility: { mcp: [1, 2], skill: ["api-recon", "playwright-cli"] },

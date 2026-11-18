@@ -5,7 +5,6 @@ import * as React from "react";
 import {
   ActivityIcon,
   AlertTriangleIcon,
-  BugIcon,
   CheckIcon,
   ClockIcon,
   CoinsIcon,
@@ -31,7 +30,6 @@ import { api } from "@/lib/api";
 import type {
   AssetInterceptKind,
   AssetInterceptRule,
-  Finding,
   ModelTokenStat,
   Stats,
   Task,
@@ -107,7 +105,6 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const [task, setTask] = React.useState<Task | null>(null);
   const [stats, setStats] = React.useState<Stats | null>(null);
   const [intents, setIntents] = React.useState<TaskNode[]>([]);
-  const [findings, setFindings] = React.useState<Finding[]>([]);
   const [coverage, setCoverage] = React.useState<{
     enabled: boolean;
     scope_rows: number;
@@ -355,11 +352,10 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       if (loading) return;
       loading = true;
       try {
-        const [taskResp, statsResp, intentsResp, findingsResp] = await Promise.all([
+        const [taskResp, statsResp, intentsResp] = await Promise.all([
           api.task(taskId),
           api.stats(taskId),
           api.intents(taskId),
-          api.findings(taskId),
         ]);
         if (cancelled) return;
         const activeTask = statsResp.active_task;
@@ -377,7 +373,6 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         );
         setStats(statsResp);
         setIntents(intentsResp);
-        setFindings(findingsResp);
         // coverage is independent + may 503 when no asset store — fetch separately so
         // its failure never blocks the others.
         api
@@ -415,7 +410,6 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const running = intents.filter((i) => i.state === "running");
   const open = intents.filter((i) => i.state === "open");
   const blocked = intents.filter((i) => i.state === "blocked");
-  const taskFindings = findings.filter((f) => f.task_id === taskId);
   const goalsPct = task?.goals_total ? Math.round(((task.goals_met ?? 0) / task.goals_total) * 100) : 0;
   // Token totals across all models for the card header.
   const tokenTotals = modelTokens.reduce(
@@ -972,10 +966,6 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <div className="text-2xl font-semibold tabular-nums text-red-600">{taskFindings.length}</div>
-              <div className="text-xs text-muted-foreground">Confirmed Findings</div>
-            </div>
-            <div>
               <div className="text-2xl font-semibold tabular-nums text-blue-600">{running.length}</div>
               <div className="text-xs text-muted-foreground">Running</div>
             </div>
@@ -990,22 +980,6 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <BugIcon className="size-4 text-red-500" /> Recent Findings
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {taskFindings.slice(0, 6).map((f) => (
-              <div key={f.id} className="flex items-center gap-2 text-sm">
-                <StatusBadge domain="severity" value={f.severity} dot />
-                <span className="min-w-0 flex-1 truncate">{f.summary}</span>
-              </div>
-            ))}
-            {taskFindings.length === 0 && <p className="text-sm text-muted-foreground">No findings yet</p>}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Blocked intents can be rerun after errors or interception (e.g. LLM network issues) by resetting them to open;
@@ -1051,7 +1025,6 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard label="Pending Intents" value={open.length} icon={ShieldCheckIcon} sub="Open frontier" />
-        <StatCard label="Confirmed Findings" value={taskFindings.length} icon={BugIcon} sub="This task" />
         <StatCard
           label="Total Intents"
           value={intents.length}

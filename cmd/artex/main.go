@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,18 +31,24 @@ var version = "dev"
 
 const defaultHTTPAddr = "127.0.0.1:8787"
 
+// exitAddrInUse is a permanent startup failure: the listen address is already
+// taken, usually by another LN-AI instance. The supervisor must not retry it —
+// restarting cannot free the port, and the endless 1→2→4…60s backoff loop only
+// buries the real error. start.sh/start.bat stop on this code.
+const exitAddrInUse = 2
+
 const banner = `
-    _    ____ _____ _______  __
-   / \  |  _ \_   _| ____\ \/ /
-  / _ \ | |_) || | |  _|  \  /
- / ___ \|  _ < | | | |___ /  \
-/_/   \_\_| \_\|_| |_____/_/\_\
+  _      _   _       _    ___
+ | |    | \ | |     / \  |_ _|
+ | |    |  \| |    / _ \  | |
+ | |___ | |\  |   / ___ \ | |
+ |_____||_| \_|  /_/   \_\___|
 `
 
 // printBanner writes the startup banner + version/runtime info to stdout.
 func printBanner(addr string) {
 	fmt.Print(banner)
-	fmt.Println("  AI Autonomous Penetration Testing System")
+	fmt.Println("  AI Autonomous Reconnaissance System")
 	fmt.Printf("  Version %s  ·  %s/%s  ·  %s  ·  Listening on %s\n\n",
 		version, runtime.GOOS, runtime.GOARCH, runtime.Version(), addr)
 }
@@ -52,6 +59,34 @@ func printBanner(addr string) {
 // in a function that can *return* rather than os.Exit past its own defers.
 func main() {
 	os.Exit(run())
+}
+
+// listenFailure reports a failed bind and returns the process exit code. A busy
+// address is permanent — retrying only repeats the same error — so the
+// supervisor is told to stop through exitAddrInUse.
+func listenFailure(addr string, err error) int {
+	if isAddrInUse(err) {
+		log.Printf("[startup] cannot listen on %s: address already in use", addr)
+		log.Printf("[startup] another LN-AI instance is probably running, or another process owns the port")
+		log.Printf("[startup] stop the other instance, or use a different address (for example -addr 127.0.0.1:9000)")
+		fmt.Fprintf(os.Stderr, "[artex] Port %s is already in use — not restarting.\n", addr)
+		return exitAddrInUse
+	}
+	log.Printf("[startup] cannot listen on %s: %v", addr, err)
+	return 1
+}
+
+// isAddrInUse reports whether a bind failed because the address is taken. On
+// Windows the errno is WSAEADDRINUSE (10048), which is not syscall.EADDRINUSE,
+// so match the numeric value and the message text as well as the Unix sentinel.
+func isAddrInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, syscall.Errno(10048)) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "address already in use")
 }
 
 func jwtKeyDir() string {
@@ -73,16 +108,33 @@ func run() int {
 	// to the frontend top bar.
 	server.BuildVersion = version
 
-	printBanner(*addr)
-
 	// capture backend logs into the in-memory sink (still to stderr) so the /logs
 	// page can show a live log stream. Do this first, to catch startup logs too.
 	server.StartLogCapture()
 
+	// Claim the listen address before anything expensive. A second instance must
+	// fail here with a clear message instead of opening the database and then
+	// dying in a background goroutine after the banner already said "Listening".
+	// Binding before Bootstrap also keeps a duplicate start from counting as a
+	// failed attempt of a freshly installed build and triggering a needless rollback.
+	listenAddr := *addr
+	if listenAddr == "" {
+		// http.Server.ListenAndServe used ":http" for an empty address; keep that
+		// behavior now that the listener is opened explicitly.
+		listenAddr = ":http"
+	}
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return listenFailure(listenAddr, err)
+	}
+	defer ln.Close()
+
+	printBanner(*addr)
+
 	// Self-update bootstrap: swap in a staged binary, or count a post-swap boot
 	// attempt and roll back if the new build keeps dying. Must run before we open
-	// the stores or bind a port — this may end with "exit and let the start script
-	// relaunch me", and there is no point paying for either first.
+	// the stores — this may end with "exit and let the start script relaunch me",
+	// and there is no point paying for that first.
 	action, upState := selfupdate.Bootstrap()
 	server.SetBootUpdateState(upState)
 	if action == selfupdate.Restart {
@@ -127,14 +179,13 @@ func run() int {
 	defer srv.Close()
 	srv.WarnIfExposed(*addr)
 	httpSrv := &http.Server{
-		Addr:              *addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		log.Printf("ARTEX %s backend listening on %s (data=%s, workers=%d)", version, *addr, *dataDir, mgr.Workers())
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("LN-AI %s backend listening on %s (data=%s, workers=%d)", version, *addr, *dataDir, mgr.Workers())
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("serve: %v", err)
 		}
 	}()

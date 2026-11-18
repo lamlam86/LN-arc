@@ -199,7 +199,7 @@ func (s *Server) currentSetupToken() string {
 	}
 	s.setupToken = base64.RawURLEncoding.EncodeToString(b)
 	log.Printf("[auth] Setup token: %s", s.setupToken)
-	log.Printf("[auth] Enter this setup token on the setup page to initialize user ARTEX")
+	log.Printf("[auth] Enter this setup token on the setup page to initialize user LN-AI")
 	return s.setupToken
 }
 
@@ -250,7 +250,7 @@ func (s *Server) bootstrapAuth() {
 				return
 			}
 			s.setPassHash(string(hash))
-			log.Printf("[auth] Initialized user ARTEX from %s", adminPasswordEnv)
+			log.Printf("[auth] Initialized user LN-AI from %s", adminPasswordEnv)
 			return
 		}
 	}
@@ -387,7 +387,7 @@ func (s *Server) WarnIfExposed(addr string) {
 	if err != nil || hash != "" {
 		return
 	}
-	log.Printf("[auth] WARNING: the administrator password is unset while ARTEX listens on %q; finish setup before exposing this port", addr)
+	log.Printf("[auth] WARNING: the administrator password is unset while LN-AI listens on %q; finish setup before exposing this port", addr)
 }
 
 // validatePassword returns an empty string on success, otherwise a displayable reason.
@@ -658,10 +658,10 @@ func writeVersionedJWTKey(path string, rotate bool, ops jwtKeyFileOps) ([]byte, 
 	return key, nil
 }
 
-// signJWT issues a 7-day HS256 token for user ARTEX.
+// signJWT issues a 7-day HS256 token for user LN-AI.
 func signJWT(key []byte) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Subject:   "ARTEX",
+		Subject:   "LN-AI",
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(jwtTTL)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 	}).SignedString(key)
@@ -935,7 +935,7 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passwordOK := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) == nil
-	if req.Username != "ARTEX" || !passwordOK {
+	if req.Username != "LN-AI" || !passwordOK {
 		s.recordAuthFailure(r, "login")
 		writeErr(w, http.StatusUnauthorized, authErrBadCredential)
 		return

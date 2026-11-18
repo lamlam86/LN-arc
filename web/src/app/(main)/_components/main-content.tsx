@@ -25,10 +25,14 @@ function isFullBleed(pathname: string) {
       return pathname;
     }
   })();
-  // Static exports enable trailingSlash, so the list pathname is "/function/tasks/".
-  // Strip the trailing slash before checking the prefix to avoid hiding the global header on the list page.
+  // Static exports enable trailingSlash, so strip it before matching. Task detail
+  // and the full-screen report reader provide their own header/padding.
   const normalized = p.replace(/\/+$/, "");
-  return normalized.startsWith("/function/tasks/");
+  return (
+    normalized === "/function/tasks/detail" ||
+    normalized.startsWith("/function/tasks/detail/") ||
+    normalized === "/function/tasks/reports/view"
+  );
 }
 
 export function MainContent({ children }: { children: ReactNode }) {

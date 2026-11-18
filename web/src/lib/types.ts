@@ -1,4 +1,4 @@
-// ARTEX domain model — types used across the UI.
+// LN-ARC domain model — types used across the UI.
 // Derived from the functional spec (section 7: core data shapes).
 
 export type TaskStatus = "created" | "queued" | "running" | "paused" | "done" | "failed" | "timeout";
@@ -23,7 +23,6 @@ export interface Task {
   queued?: boolean;
   active?: boolean;
   in_flight?: number;
-  findings?: { critical: number; high: number; medium: number; low: number }; // Registered finding counts by severity.
   last_activity?: string;
   stalled?: boolean;
   goals_total?: number;
@@ -64,7 +63,6 @@ export interface DeleteTaskOptions {
   delete_assets: boolean;
   delete_traffic: boolean;
   delete_files: boolean;
-  delete_findings: boolean;
   delete_llm_records: boolean;
 }
 
@@ -74,7 +72,6 @@ export interface DeleteTaskResult {
   assets_detached: number;
   traffic_deleted: number;
   files_deleted: boolean;
-  findings_deleted: number;
   llm_records_deleted: number;
   cleanup_warning?: string;
 }
@@ -327,7 +324,6 @@ export interface CoverageAssetRef {
 export interface CoverageAssetRefs {
   intents: CoverageAssetRef[];
   facts: CoverageAssetRef[];
-  findings: CoverageAssetRef[];
 }
 
 // ---- Workspace file manager (workDir) ----
@@ -1570,7 +1566,7 @@ export interface UpdateCheck {
   os: string;
   arch: string;
   repo: string;
-  /** Whether a previous version (artex.old) is available for rollback. */
+  /** Whether a previous version (lnai.old) is available for rollback. */
   has_backup: boolean;
   /** Self-update bootstrap result from this startup (replacement failed, rolled back, etc.); empty when nothing happened. */
   boot_notice?: string;

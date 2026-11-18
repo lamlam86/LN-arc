@@ -25,7 +25,9 @@ import (
 )
 
 // ExitRestart asks the supervisor to restart immediately (EX_TEMPFAIL), without
-// crash backoff. Exit 0 stops the supervisor; other exits count as crashes.
+// crash backoff. Exit 0 stops the supervisor; 2 is a permanent startup failure
+// (a busy listen port) that the supervisor also treats as final; other exits
+// count as crashes.
 const ExitRestart = 75
 
 // maxAttempts limits startup attempts after installation. Each start increments

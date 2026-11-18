@@ -11,7 +11,7 @@ import (
 )
 
 // DTO/serialization layer: each handler emits EXACTLY the frontend's spec shapes
-// (artex/web/src/lib/types.ts). These reshape db package structs so the
+// (web/src/lib/types.ts). These reshape db package structs so the
 // internal DB model never leaks over the API. The db structs and the frontend are
 // the canonical contracts; this file maps one onto the other.
 
@@ -30,45 +30,74 @@ func rawString(raw json.RawMessage) string {
 
 // ---- Task (frontend "Task") ---- created_at as RFC3339, plus a derived status.
 type TaskDTO struct {
-	ID                 string             `json:"id"`
-	ExplorationID      int64              `json:"exploration_id"`
-	Name               string             `json:"name"` // Optional task name; empty means unnamed.
-	CategoryID         *int64             `json:"category_id,omitempty"`
-	CategoryName       string             `json:"category_name,omitempty"`
-	Pinned             bool               `json:"pinned"`
-	PinnedAt           string             `json:"pinned_at,omitempty"`
-	Description        string             `json:"description"`
-	Goal               string             `json:"goal"`
-	Status             string             `json:"status"` // created | running | paused | done | failed
-	CreatedAt          string             `json:"created_at"`
-	CreatedUnix        int64              `json:"created_unix"`       // created_at as unix seconds (for run-duration calc)
-	CompletedAt        string             `json:"completed_at"`       // RFC3339 finish time (done/failed); "" if unfinished
-	CompletedUnix      int64              `json:"completed_unix"`     // completed_at as unix seconds (0 if unfinished)
-	LastActivity       int64              `json:"last_activity_unix"` // unix seconds of the last activity (0 if none)
-	Paused             bool               `json:"paused"`
-	Queued             bool               `json:"queued"`
-	Tokens             TokenTotalDTO      `json:"tokens"` // whole-task token consumption
-	GoalsTotal         int                `json:"goals_total"`
-	GoalsMet           int                `json:"goals_met"`
-	InFlight           int                `json:"in_flight"`                // Running workers (intents with state=running).
-	Findings           FindingSeverityDTO `json:"findings"`                 // Registered findings for this task, grouped by severity.
-	LLMProfileID       *int64             `json:"llm_profile_id,omitempty"` // LLM profile used for this task; nil = default
-	LLMProfileIDs      []int64            `json:"llm_profile_ids"`
-	ActiveLLMProfileID *int64             `json:"active_llm_profile_id,omitempty"`
-	LLMFailoverState   string             `json:"llm_failover_state"`
-	LLMFailoverReason  string             `json:"llm_failover_reason,omitempty"`
-	SourceTaskIDs      []string           `json:"source_task_ids"`
-	ArchiveBlockedBy   string             `json:"archive_blocked_by_task_id,omitempty"`
-	CompanyIDs         []int64            `json:"company_ids"`
-	CoverageEnabled    bool               `json:"coverage_enabled"` // Asset coverage switch, set at creation.
+	ID                 string        `json:"id"`
+	ExplorationID      int64         `json:"exploration_id"`
+	Name               string        `json:"name"` // Optional task name; empty means unnamed.
+	CategoryID         *int64        `json:"category_id,omitempty"`
+	CategoryName       string        `json:"category_name,omitempty"`
+	Pinned             bool          `json:"pinned"`
+	PinnedAt           string        `json:"pinned_at,omitempty"`
+	Description        string        `json:"description"`
+	Goal               string        `json:"goal"`
+	Status             string        `json:"status"` // created | running | paused | done | failed
+	CreatedAt          string        `json:"created_at"`
+	CreatedUnix        int64         `json:"created_unix"`       // created_at as unix seconds (for run-duration calc)
+	CompletedAt        string        `json:"completed_at"`       // RFC3339 finish time (done/failed); "" if unfinished
+	CompletedUnix      int64         `json:"completed_unix"`     // completed_at as unix seconds (0 if unfinished)
+	LastActivity       int64         `json:"last_activity_unix"` // unix seconds of the last activity (0 if none)
+	Paused             bool          `json:"paused"`
+	Queued             bool          `json:"queued"`
+	Tokens             TokenTotalDTO `json:"tokens"` // whole-task token consumption
+	GoalsTotal         int           `json:"goals_total"`
+	GoalsMet           int           `json:"goals_met"`
+	InFlight           int           `json:"in_flight"`                // Running workers (intents with state=running).
+	LLMProfileID       *int64        `json:"llm_profile_id,omitempty"` // LLM profile used for this task; nil = default
+	LLMProfileIDs      []int64       `json:"llm_profile_ids"`
+	ActiveLLMProfileID *int64        `json:"active_llm_profile_id,omitempty"`
+	LLMFailoverState   string        `json:"llm_failover_state"`
+	LLMFailoverReason  string        `json:"llm_failover_reason,omitempty"`
+	SourceTaskIDs      []string      `json:"source_task_ids"`
+	ArchiveBlockedBy   string        `json:"archive_blocked_by_task_id,omitempty"`
+	CompanyIDs         []int64       `json:"company_ids"`
+	CoverageEnabled    bool          `json:"coverage_enabled"` // Asset coverage switch, set at creation.
 }
 
-// FindingSeverityDTO counts task findings by severity (critical/high/medium/low).
-type FindingSeverityDTO struct {
-	Critical int `json:"critical"`
-	High     int `json:"high"`
-	Medium   int `json:"medium"`
-	Low      int `json:"low"`
+// AssetRefDTO is a compact asset reference for activity/provenance display.
+type AssetRefDTO struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Label string `json:"label"`
+}
+
+// assetLabel renders an asset's most identifying field for compact display.
+func assetLabel(a *db.Asset) string {
+	switch {
+	case a.URL != "":
+		if a.Method != "" {
+			return a.Method + " " + a.URL
+		}
+		return a.URL
+	case a.Domain != "":
+		if a.Port != nil && *a.Port > 0 {
+			return fmt.Sprintf("%s:%d", a.Domain, *a.Port)
+		}
+		return a.Domain
+	case a.IP != "":
+		if a.Port != nil && *a.Port > 0 {
+			return fmt.Sprintf("%s:%d", a.IP, *a.Port)
+		}
+		return a.IP
+	case a.AppName != "":
+		return a.AppName
+	case a.BundleID != "":
+		return a.BundleID
+	case a.ServiceName != "":
+		return a.ServiceName
+	case a.RootDomain != "":
+		return a.RootDomain
+	default:
+		return "#" + i64s(a.ID)
+	}
 }
 
 func applyTaskArchiveBlocker(dto *TaskDTO, blockers map[int64]int64) {
@@ -298,174 +327,6 @@ func coverageAssetRefDTO(ref db.AssetRef) CoverageAssetRefDTO {
 		out.SourceTaskID = i64s(ref.SourceTaskID)
 	}
 	return out
-}
-
-// ---- Finding (frontend "Finding") ----
-
-type FindingDTO struct {
-	TrafficCount          int                        `json:"traffic_count"`
-	EvidenceVersion       int64                      `json:"evidence_version"`
-	ReportEvidenceVersion int64                      `json:"report_evidence_version"`
-	ReportStale           bool                       `json:"report_stale"`
-	TrafficBindings       []db.FindingTrafficBinding `json:"traffic_bindings,omitempty"`
-
-	ID        string `json:"id"`
-	FindingID string `json:"finding_id,omitempty"` // standalone findings-table id — the handle for status updates
-	VulnClass string `json:"vulnclass"`
-	Name      string `json:"name,omitempty"` // Finding name; the frontend falls back to vulnclass when empty.
-	Severity  string `json:"severity"`       // critical | high | medium | low
-	Status    string `json:"status"`         // pending | in_progress | confirmed | resolved | fixed | false_positive | ignored | duplicate | risk_accepted
-	Summary   string `json:"summary"`
-	Evidence  string `json:"evidence"`
-	Report    string `json:"report,omitempty"` // Detailed Markdown report; returned only by the detail API, empty in lists.
-
-	IntentID        string            `json:"intent_id,omitempty"`
-	ParamID         string            `json:"param_id,omitempty"`
-	TaskID          string            `json:"task_id,omitempty"`
-	TaskDescription string            `json:"task_description,omitempty"`
-	SourceTaskID    string            `json:"source_task_id,omitempty"`
-	Inherited       bool              `json:"inherited,omitempty"`
-	Assets          []FindingAssetDTO `json:"assets,omitempty"`
-	TS              string            `json:"ts"`
-}
-
-// FindingAssetDTO is one asset a finding is anchored to, pre-labelled for display.
-type FindingAssetDTO struct {
-	ID    string `json:"id"`
-	Type  string `json:"type"`
-	Label string `json:"label"`
-}
-
-// assetLabel renders an asset's most identifying field for compact display.
-func assetLabel(a *db.Asset) string {
-	switch {
-	case a.URL != "":
-		if a.Method != "" {
-			return a.Method + " " + a.URL
-		}
-		return a.URL
-	case a.Domain != "":
-		if a.Port != nil && *a.Port > 0 {
-			return fmt.Sprintf("%s:%d", a.Domain, *a.Port)
-		}
-		return a.Domain
-	case a.IP != "":
-		if a.Port != nil && *a.Port > 0 {
-			return fmt.Sprintf("%s:%d", a.IP, *a.Port)
-		}
-		return a.IP
-	case a.AppName != "":
-		return a.AppName
-	case a.BundleID != "":
-		return a.BundleID
-	case a.ServiceName != "":
-		return a.ServiceName
-	case a.RootDomain != "":
-		return a.RootDomain
-	default:
-		return "#" + i64s(a.ID)
-	}
-}
-
-// findingPayload mirrors the JSON written by the worker's report_finding tool
-// (agent/tools.go addFinding): {vulnclass, severity, summary, evidence:{by,poc}}.
-type findingPayload struct {
-	VulnClass string          `json:"vulnclass"`
-	Name      string          `json:"name"`
-	Severity  string          `json:"severity"`
-	Summary   string          `json:"summary"`
-	Evidence  json.RawMessage `json:"evidence"`
-}
-
-func findingDTO(n *db.Node) FindingDTO {
-	var p findingPayload
-	_ = json.Unmarshal(n.Payload, &p)
-	d := FindingDTO{
-		ID:        i64s(n.ID),
-		VulnClass: p.VulnClass,
-		Name:      p.Name,
-		Severity:  p.Severity,
-		Status:    db.FindingPending,
-		Summary:   p.Summary,
-		Evidence:  rawString(p.Evidence),
-		TS:        rfc3339(n.CreatedAt),
-	}
-	if n.SourceTaskID > 0 {
-		d.SourceTaskID = i64s(n.SourceTaskID)
-	}
-	d.Inherited = n.Inherited
-	return d
-}
-
-// findingDTOsForTask converts a task's finding nodes to DTOs, stamping each with
-// the owning task id/description so the global Findings page can group across tasks.
-// meta maps node id → the standalone findings row (id + status + asset ids), so the
-// per-task view shows the same triage state and anchored assets as the global page;
-// nodes with no row keep the 'pending' default and no finding_id (not editable).
-// assets pre-resolves the anchored asset rows for label rendering.
-func findingDTOsForTask(t *Task, in []*db.Node, meta map[int64]db.FindingMeta, assets map[int64]*db.Asset) []FindingDTO {
-	return findingDTOsForOwner(t.ID, t.Description, in, meta, assets)
-}
-
-func findingDTOsForOwner(taskID, description string, in []*db.Node, meta map[int64]db.FindingMeta, assets map[int64]*db.Asset) []FindingDTO {
-	out := make([]FindingDTO, 0, len(in))
-	for _, n := range in {
-		d := findingDTO(n)
-		d.TaskID = taskID
-		d.TaskDescription = description
-		if m, ok := meta[n.ID]; ok {
-			d.FindingID = i64s(m.ID)
-			d.Status = m.Status
-			d.TrafficCount = m.TrafficCount
-			d.Assets = findingAssetDTOs(m.AssetIDs, assets)
-		}
-		out = append(out, d)
-	}
-	return out
-}
-
-// findingAssetDTOs maps anchored asset ids to display DTOs, skipping ids whose
-// asset row is missing (e.g. deleted).
-func findingAssetDTOs(ids []int64, assets map[int64]*db.Asset) []FindingAssetDTO {
-	var out []FindingAssetDTO
-	for _, aid := range ids {
-		if a := assets[aid]; a != nil {
-			out = append(out, FindingAssetDTO{ID: i64s(a.ID), Type: a.Type, Label: assetLabel(a)})
-		}
-	}
-	return out
-}
-
-// findingFromDB converts a standalone DBFinding row to a FindingDTO. task_id and
-// task_description are empty when the originating task has been deleted (NULL).
-func findingFromDB(f *db.DBFinding, assets map[int64]*db.Asset) FindingDTO {
-	status := f.Status
-	if status == "" {
-		status = db.FindingPending
-	}
-	d := FindingDTO{
-		ID:           i64s(f.ID),
-		FindingID:    i64s(f.ID),
-		TrafficCount: f.TrafficCount, EvidenceVersion: f.EvidenceVersion, ReportEvidenceVersion: f.ReportEvidenceVersion,
-		ReportStale: f.Report != "" && f.EvidenceVersion != f.ReportEvidenceVersion, TrafficBindings: f.TrafficBindings,
-		VulnClass: f.VulnClass,
-		Name:      f.Name,
-		Severity:  f.Severity,
-		Status:    status,
-		Summary:   f.Summary,
-		Evidence:  f.Evidence,
-		Report:    f.Report,
-		TS:        rfc3339(f.CreatedAt),
-	}
-	d.Assets = findingAssetDTOs(f.AssetIDs, assets)
-	if f.TaskID != nil {
-		d.TaskID = i64s(*f.TaskID)
-		d.TaskDescription = f.TaskDescription
-	}
-	if f.NodeID != nil {
-		d.IntentID = "" // node_id is the finding node, not the intent; keep IntentID empty
-	}
-	return d
 }
 
 // ---- Activity (frontend "Activity") ----

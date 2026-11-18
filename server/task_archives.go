@@ -181,13 +181,6 @@ func (s *Server) archiveTask(job *pgdb.TaskArchive) (runErr error) {
 		snapshot.DataCounts["traffic"] = trafficCount
 	}
 	archivePath := taskArchivePath(s.m.dir, job.ID, taskID)
-	evidenceSnapshots, err := pgdb.ArchiveEvidenceSnapshots(snapshot)
-	if err != nil {
-		return err
-	}
-	if err = s.evidenceStore().CopySnapshots(s.ctx, evidenceSnapshots, filepath.Join(fileStage.payload, "evidence")); err != nil {
-		return err
-	}
 	_ = s.m.pg.UpdateTaskArchiveProgress(job.ID, "compress", 50)
 	originalSize, compressedSize, checksum, err := writeTaskArchivePackage(archivePath, fileStage.payload, snapshot)
 	if err != nil {
@@ -280,13 +273,7 @@ func (s *Server) restoreTaskArchive(job *pgdb.TaskArchive) (runErr error) {
 	if snapshot.TaskID != job.TaskID || !pgdb.IsTaskArchiveFormatSupported(snapshot.FormatVersion) {
 		return pgdb.ErrTaskArchiveFormatMismatch
 	}
-	evidenceSnapshots, err := pgdb.ArchiveEvidenceSnapshots(&snapshot)
-	if err != nil {
-		return err
-	}
-	return s.evidenceStore().WithInstalledSnapshots(s.ctx, evidenceSnapshots, filepath.Join(extracted, "evidence"), func() error {
-		return s.restoreTaskArchivePayload(job, &snapshot, extracted)
-	})
+	return s.restoreTaskArchivePayload(job, &snapshot, extracted)
 }
 
 func (s *Server) restoreTaskArchivePayload(job *pgdb.TaskArchive, snapshot *pgdb.TaskArchiveSnapshot, extracted string) (runErr error) {

@@ -20,12 +20,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hypnguyen1209/V-ARTEX/llmrec"
 	"github.com/Autumn-27/norma/agentcore"
 	"github.com/Autumn-27/norma/compaction"
 	"github.com/Autumn-27/norma/llm"
 	acperm "github.com/Autumn-27/norma/permission"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/llmrec"
 )
 
 // Config describes the LLM backend resolved from the environment.
@@ -137,10 +137,12 @@ func compactionConfig(windowTokens int) *compaction.Config {
 
 // FromEnv resolves the LLM provider config:
 //
-//	ARTEX_LLM_PROVIDER = anthropic|openai (default: inferred from keys)
-//	ARTEX_LLM_MODEL    = model id        (default: per provider)
-//	ARTEX_LLM_BASE_URL = endpoint        (optional)
-//	ARTEX_LLM_PROXY    = proxy URL        (optional; http/https/socks5)
+//	ARTEX_LLM_PROVIDER       = anthropic|openai (default: inferred from keys)
+//	ARTEX_LLM_MODEL          = model id        (default: per provider)
+//	ARTEX_LLM_BASE_URL       = endpoint        (optional)
+//	ARTEX_LLM_PROXY          = proxy URL        (optional; http/https/socks5)
+//	ARTEX_LLM_SESSION_HEADER = custom session header name (optional; e.g.
+//	                           x-opencode-session, required by OpenCode Go)
 //	ANTHROPIC_API_KEY / OPENAI_API_KEY         = credentials
 func FromEnv() (Config, bool) {
 	prov := os.Getenv("ARTEX_LLM_PROVIDER")
@@ -159,9 +161,10 @@ func FromEnv() (Config, bool) {
 	}
 
 	c := Config{
-		BaseURL: os.Getenv("ARTEX_LLM_BASE_URL"),
-		Model:   os.Getenv("ARTEX_LLM_MODEL"),
-		Proxy:   strings.TrimSpace(os.Getenv("ARTEX_LLM_PROXY")),
+		BaseURL:          os.Getenv("ARTEX_LLM_BASE_URL"),
+		Model:            os.Getenv("ARTEX_LLM_MODEL"),
+		Proxy:            strings.TrimSpace(os.Getenv("ARTEX_LLM_PROXY")),
+		SessionHeaderKey: strings.TrimSpace(os.Getenv("ARTEX_LLM_SESSION_HEADER")),
 		// Streaming by default; ARTEX_LLM_STREAM=false/0/off explicitly selects non-streaming.
 		Stream: !isFalsy(os.Getenv("ARTEX_LLM_STREAM")),
 	}

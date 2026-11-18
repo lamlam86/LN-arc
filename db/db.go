@@ -204,16 +204,15 @@ var builtinAgents = []builtinAgent{
 	{"mainagent", "Main", "main", "Human interface: observe progress and turn user requests into hints or high-priority intents.", []promptVar{
 		{"Goal", "Current task objective", "Obtain administrator access to example.com", "exploration"},
 		{"AssetSummary", "Initial situation summary (optional)", "domain:3 ip:5", "distilled"},
-		{"FindingsSummary", "Confirmed vulnerability summary (optional)", "high:1 medium:2", "distilled"},
 	}, false, nil},
-	{"worker", "Worker", "worker", "Claim and execute one intent, record discovered facts and vulnerabilities in the knowledge graph, then stop.", []promptVar{
+	{"worker", "Worker", "worker", "Claim and execute one recon intent, record discovered facts in the knowledge graph, then stop.", []promptVar{
 		{"ProxyAddr", "Recording proxy address (controls conditional prompt text)", "127.0.0.1:8080", "runtime"},
 		{"WorkerName", "Worker self-identification (optional)", "worker-1", "runtime"},
 	}, false, nil},
 	// Auto: built-in platform-operations agent; driven by chat and platform tools, outside the pentest loop.
 	{"auto", "Auto", "assistant", "Platform assistant: use tools to manage tasks (create/view/pause/hint) and assets, and create or update skills, custom tools, and MCP servers.", nil, false, nil},
 	// Pentest: independent chat-driven agent covering reconnaissance, planning, execution, validation, and wrap-up. Shell enabled by default.
-	{"pentest", "Penetration testing", "assistant", "Standalone penetration testing agent: handle reconnaissance, attack surface discovery, exploitation, verification, and wrap-up with independent planning, execution, and adversarial verification.", nil, true, intp(0)},
+	{"pentest", "Penetration testing", "assistant", "Standalone reconnaissance agent: handle asset discovery, DNS/HTTP probing, fingerprinting, API enumeration, evidence recording, and wrap-up with independent planning and verification.", nil, true, intp(0)},
 }
 
 // seedBuiltins inserts the fixed built-in agents and their variable catalog (idempotent).
@@ -259,11 +258,13 @@ ON CONFLICT (agent_id, var_name) DO NOTHING`,
 	// the recording proxy + CA at runtime (server.Manager.syncBrowserMCPProxy).
 	// Insert only if absent so we never clobber user edits (args/env/enabled/
 	// visibility) on restart.
+	// --no-sandbox is required when the image runs as root (the default for the shipped
+	// Dockerfile): Chrome refuses to start sandboxed as uid 0.
 	if _, err := d.Exec(`
 INSERT INTO mcp_servers(name, transport, command, args, env, enabled)
 VALUES ('browser', 'stdio', 'npx', $1, '{}', false)
 ON CONFLICT (name) DO NOTHING`,
-		`["@playwright/mcp","--headless"]`); err != nil {
+		`["@playwright/mcp","--headless","--no-sandbox"]`); err != nil {
 		return fmt.Errorf("seed browser mcp: %w", err)
 	}
 	// NOTE: the placeholder ScopeSentry data-source MCP (empty URL + empty X-API-Key,
@@ -324,7 +325,23 @@ ON CONFLICT DO NOTHING`, r.kind, r.pattern, r.note); err != nil {
 // declares `mcps: ScopeSentry`, which only takes effect once it's made visible and
 // that MCP is enabled/configured.
 var builtinSkillVisibility = map[string][]string{
-	"api-recon": {"auto", "pentest", "worker"},
+	"api-recon":           {"auto", "pentest", "worker"},
+	"subdomain-enum":      {"auto", "pentest", "worker"},
+	"dns-recon":           {"auto", "pentest", "worker"},
+	"tls-cert-recon":      {"auto", "pentest", "worker"},
+	"http-fingerprint":    {"auto", "pentest", "worker"},
+	"content-discovery":   {"auto", "pentest", "worker"},
+	"port-service-recon":  {"auto", "pentest", "worker"},
+	"traffic-analysis":    {"auto", "pentest", "worker"},
+	"archive-recon":       {"auto", "pentest", "worker"},
+	"js-endpoint-recon":   {"auto", "pentest", "worker"},
+	"visual-recon":        {"auto", "pentest", "worker"},
+	"cloud-storage-recon": {"auto", "pentest", "worker"},
+	"scope-coverage":      {"auto", "pentest", "worker", "planner"},
+	"exposure-recon":      {"auto", "pentest", "worker"},
+	"exposure-assessment": {"auto", "pentest", "worker"},
+	"recon-report":        {"auto", "pentest", "worker"},
+	"self-exposure-audit": {"auto", "pentest", "worker"},
 }
 
 // seedBuiltinSkillVisibility binds the shipped built-in skills to their default

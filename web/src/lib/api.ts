@@ -171,7 +171,7 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
 // Token is appended as ?token= because SSE can't carry cookies cross-origin.
 // mockReport returns a canned Markdown report for the demo.
 function mockReport(_task?: string): string {
-  return `# ARTEX Penetration Test Report — Acme Corp
+  return `# LN-ARC Reconnaissance Report — Acme Corp
 
 ## Overview
 - Scope: acme.com (including www / admin / api / shop / vpn subdomains)

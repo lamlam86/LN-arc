@@ -1,11 +1,13 @@
 <div align="center">
 
-# ARTEX
+# LN-ARC
 
-Autonomous AI penetration testing system (Go backend + Next.js frontend)
+Autonomous AI reconnaissance console (Go backend + Next.js frontend).
 
-
-🌐 **Live Demo**: [https://artex-demo.vercel.app/](https://artex-demo.vercel.app/)
+> LN-ARC is a recon-only derivative of the open-source
+> [upstream project](https://github.com/hypnguyen1209/V-ARTEX) (AGPL-3.0).
+> Exploitation, vulnerability reporting, and retest workflows have been removed.
+> See [RECON_ONLY.md](RECON_ONLY.md) for the full change list and rebuild steps.
 
 </div>
 
@@ -13,43 +15,14 @@ Autonomous AI penetration testing system (Go backend + Next.js frontend)
 
 ## Screenshots
 
-> Explore the full interface in the [Live Demo](https://artex-demo.vercel.app/).
-
-| Dashboard (Overview / Token Usage / Activity Feed) | Task List |
-| :---: | :---: |
-| ![Dashboard](screenshots/dashboard.png) | ![Tasks](screenshots/tasks.png) |
-
-| Task Execution (Sessions / Tool Calls) | Exploration Graph |
-| :---: | :---: |
-| ![Execution](screenshots/sessions.png) | ![Exploration Graph](screenshots/graph.png) |
-
-| Findings | Assets |
-| :---: | :---: |
-| ![Findings](screenshots/findings.png) | ![Assets](screenshots/assets.png) |
-
-| Asset Coverage Graph (Force Layout · Tested Assets Highlighted · Collapsible Nodes) |
-| :---: |
-| ![Asset Coverage Graph](screenshots/assets_test.png) |
-
-| Traffic Recording | Human-in-the-Loop Chat |
-| :---: | :---: |
-| ![Traffic](screenshots/traffic.png) | ![Chat](screenshots/chat.png) |
-
-| Agent Management | LLM Configuration |
-| :---: | :---: |
-| ![Agent](screenshots/agents.png) | ![LLM](screenshots/llm.png) |
-
-| Interception Rules | Backend Logs |
-| :---: | :---: |
-| ![Interception](screenshots/intercept.png) | ![Logs](screenshots/logs.png) |
-
+> Screenshots will be regenerated after the LN-ARC UI rebuild. The upstream screenshots are intentionally not shown here to avoid confusing the two brands.
 
 ---
 
 ## Approval Record Details
 
 Global Approval Records, task Interception Approvals, and approval cards in chat can all expand to show details. The layout draws on
-[AegisHook's approval details component](https://github.com/RuoJi6/AegisHook/blob/main/web/src/components/CallDetail.vue), using ARTEX's components and theme:
+[AegisHook's approval details component](https://github.com/RuoJi6/AegisHook/blob/main/web/src/components/CallDetail.vue), using LN-ARC's components and theme:
 
 
 ## Asset Synchronization (ScopeSentry)
@@ -58,7 +31,7 @@ Synchronize assets directly from [ScopeSentry](https://github.com/Autumn-27/Scop
 
 - Enter the ScopeSentry URL and API Key on the **Asset Synchronization** page to connect the data source.
 - Select targets and asset types (domains / subdomains / IPs / ports / sites / endpoints…) by **project** or **task**.
-- Import in one click and group assets by company scope, making them available in ARTEX's asset graph for agent exploration.
+- Import in one click and group assets by company scope, making them available in LN-ARC's asset graph for agent exploration.
 
 ---
 
@@ -296,7 +269,7 @@ In this version, history is available through vulnerability details and sessions
 
 ## System Architecture
 
-ARTEX is an **autonomous penetration testing system driven by multiple LLM agents**: a Go monolithic backend (with an embedded Next.js frontend) + PostgreSQL. The [`norma`](https://github.com/Autumn-27/norma) SDK provides agent capabilities (`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`). Its core is a **dual-graph architecture**, supported by two mechanisms for autonomy: **execution trace sharing between workers** and **a planner todolist shared across rounds to keep attack chains on track**.
+LN-ARC is an **autonomous reconnaissance system driven by multiple LLM agents**: a Go monolithic backend (with an embedded Next.js frontend) + PostgreSQL. The [`norma`](https://github.com/Autumn-27/norma) SDK provides agent capabilities (`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`). Its core is a **dual-graph architecture**, supported by two mechanisms for autonomy: **execution trace sharing between workers** and **a planner todolist shared across rounds to keep attack chains on track**.
 
 ### Architectural Layers
 
@@ -460,7 +433,7 @@ flowchart TB
   R3["Round 3 (② yields a fact) · dispatch intent ③"] --> T3
 ```
 
-This keeps attack chains **progressing reliably, without repetition or reordering**, even with event-driven, stateless sessions. It is central to ARTEX's autonomous execution of multi-step exploit chains.
+This keeps attack chains **progressing reliably, without repetition or reordering**, even with event-driven, stateless sessions. It is central to LN-ARC's autonomous execution of multi-step reconnaissance chains.
 
 ---
 
@@ -490,7 +463,7 @@ Anyone may use, modify, and distribute this project, but **derivative works must
 
 > ⚠️ **Important**: The open source license itself does not restrict the software's purposes. The following usage restrictions and disclaimer are additional terms and statements from the author to users. Please comply with them.
 
-**ARTEX is for personal learning, source code research, and local technical validation only. It must not be used for actual testing of any online system or website.**
+**LN-ARC is for personal learning, source code research, and local technical validation only. It must not be used for actual testing of any online system or website.**
 
 ### Permitted Uses
 

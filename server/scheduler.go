@@ -13,11 +13,11 @@ import (
 )
 
 // Scheduler drives P3 triggers: on each tick it fires due interval triggers and
-// scans for new findings / newly-met goals (any task) to fire event triggers.
+// scans for newly-met goals (any task) to fire event triggers.
 // Each fire enqueues a NEW conversation on the agent's per-agent trigger queue
 // (StartTriggeredRun): fires for the same agent run one at a time in FIFO order,
 // distinct agents still run concurrently. State is persisted (per-trigger last_fire
-// + finding watermark + fired-goal set) so a restart resumes without double-firing.
+// + fired-goal set) so a restart resumes without double-firing.
 // Triggers only attach to CUSTOM agents.
 type Scheduler struct {
 	s    *Server
@@ -26,7 +26,6 @@ type Scheduler struct {
 }
 
 const (
-	schedKeyLastFinding    = "last_finding_id"    // watermark: max finding node id fired for
 	schedKeyFiredGoals     = "fired_goals"        // JSON array of goal node ids already fired
 	schedKeyLastTimeout    = "last_timeout_id"    // watermark: max task id fired for task timeout
 	schedKeyLastToolCall   = "last_toolcall_id"   // watermark: max activity id fired for tool call
@@ -56,20 +55,9 @@ func (sc *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// init seeds the watermarks on first run so pre-existing findings/goals don't all
+// init seeds the watermarks on first run so pre-existing goals don't all
 // fire at once — only events created AFTER the scheduler first starts count.
 func (sc *Scheduler) init() {
-	if sc.mustState(schedKeyLastFinding) == "" {
-		var maxID int64
-		if evs, err := sc.pg.NewFindingsSince(0); err == nil {
-			for _, e := range evs {
-				if e.NodeID > maxID {
-					maxID = e.NodeID
-				}
-			}
-		}
-		_ = sc.pg.SetSchedState(schedKeyLastFinding, strconv.FormatInt(maxID, 10))
-	}
 	if sc.mustState(schedKeyFiredGoals) == "" {
 		set := map[int64]bool{}
 		if evs, err := sc.pg.MetGoals(); err == nil {
@@ -123,7 +111,6 @@ func (sc *Scheduler) step() {
 		return
 	}
 	sc.fireIntervals(triggers)
-	sc.fireFindings(triggers)
 	sc.fireGoals(triggers)
 	sc.fireTaskTimeouts(triggers)
 	sc.fireToolCalls(triggers)
@@ -145,40 +132,6 @@ func (sc *Scheduler) fireIntervals(triggers []*db.AgentTrigger) {
 		ctx := "\n\n[Scheduled trigger]" + now.Format(" 2006-01-02 15:04:05 MST")
 		sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Scheduled trigger · %s", now.Format("15:04")), tr.IntervalMessage+ctx, 0, false, "", "")
 	}
-}
-
-// fireFindings fires on_finding triggers for findings above the persisted
-// watermark (monotonic node id → no double-fire across restarts).
-func (sc *Scheduler) fireFindings(triggers []*db.AgentTrigger) {
-	var want []*db.AgentTrigger
-	for _, tr := range triggers {
-		if tr.OnFinding {
-			want = append(want, tr)
-		}
-	}
-	last, _ := strconv.ParseInt(sc.mustState(schedKeyLastFinding), 10, 64)
-	events, err := sc.pg.NewFindingsSince(last)
-	if err != nil || len(events) == 0 {
-		return
-	}
-	// Advance the watermark whether or not any on_finding trigger is active: a
-	// finding fires only for triggers live at the moment it appears. Otherwise a
-	// trigger enabled later would replay the entire historical backlog at once.
-	maxID := last
-	for _, e := range events {
-		if e.NodeID > maxID {
-			maxID = e.NodeID
-		}
-		if len(want) == 0 {
-			continue
-		}
-		msgCtx := fmt.Sprintf("\n\n[Triggered by a task finding]\nFinding: [%s/%s] %s",
-			e.VulnClass, e.Severity, e.Summary)
-		for _, tr := range want {
-			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Finding trigger · task#%d", e.TaskID), tr.FindingMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
-		}
-	}
-	_ = sc.pg.SetSchedState(schedKeyLastFinding, strconv.FormatInt(maxID, 10))
 }
 
 // fireGoals fires on_goal_met triggers for met goals not yet in the fired set.
@@ -302,9 +255,9 @@ func (sc *Scheduler) fireToolCalls(triggers []*db.AgentTrigger) {
 		if len(want) == 0 {
 			continue
 		}
-		// A failed finding write has no committed finding to report. Keep other
+		// A failed fact write has no committed fact to report. Keep other
 		// tool-error triggers available for user-defined automation.
-		if e.ToolIsErr && e.Tool == "report_finding" {
+		if e.ToolIsErr && e.Tool == "record_fact" {
 			continue
 		}
 		errTag := ""

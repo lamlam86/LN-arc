@@ -43,8 +43,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton asChild>
               <Link prefetch={false} href="/function/tasks">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.png" alt="ARTEX" width={40} height={40} className="shrink-0" />
-                <span className="font-semibold text-base">{APP_CONFIG.name}</span>
+                <img
+                  src="/logo.svg"
+                  alt="LN-ARC"
+                  width={36}
+                  height={36}
+                  className="shrink-0 drop-shadow-[0_0_8px_rgba(34,211,238,0.2)]"
+                />
+                <div className="flex flex-col leading-none">
+                  <span className="bg-gradient-to-r from-cyan-300 to-indigo-300 bg-clip-text font-black text-base text-transparent tracking-tight">
+                    {APP_CONFIG.name}
+                  </span>
+                  <span className="font-medium text-[9px] text-muted-foreground/60 uppercase tracking-widest">
+                    Recon Console
+                  </span>
+                </div>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -56,6 +69,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {/* <NavSecondary items={data.navSecondary} className="mt-auto" /> */}
       </SidebarContent>
       <SidebarFooter>
+        <SidebarSupportCard />
         <NavUser user={currentUser} />
       </SidebarFooter>
     </Sidebar>

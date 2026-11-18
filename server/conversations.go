@@ -501,48 +501,12 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 		delete(s.chatCancel, busyKey)
 		s.chatMu.Unlock()
 	}()
-	// Only the first turn executes a historical retest. Follow-up conversation
-	// turns may explain the sealed result; the result tool refuses to overwrite it.
-	finishStatus, finishReason := "failed", "Retest could not start"
-	if c.AgentKey == db.FindingRetestAgentKey {
-		// Read without the run cancellation so an immediate stop still seals pending.
-		r, err := s.m.pg.FindingRetestForConversation(context.Background(), c.ID)
-		if err != nil {
-			// The sealing defer below needs r.ID, which we do not have here. Seal by
-			// conversation instead, otherwise the row stays 'pending' forever.
-			log.Printf("[conv %d] load retest: %v", c.ID, err)
-			if err := s.m.pg.FailPendingRetestForConversation(c.ID, "Failed to read retest status; start a new retest"); err != nil {
-				log.Printf("[conv %d] seal retest: %v", c.ID, err)
-			}
-			return
-		}
-		if r != nil && r.Status == "pending" {
-			defer func() {
-				if ctx.Err() != nil {
-					finishStatus, finishReason = "stopped", "Retest stopped or service shut down"
-				}
-				s.finishRetest(r.ID, finishStatus, finishReason)
-			}()
-			if ctx.Err() != nil {
-				return
-			}
-			started, err := s.m.pg.StartFindingRetest(ctx, r.ID)
-			if err != nil {
-				finishReason = err.Error()
-				return
-			}
-			if !started {
-				return
-			}
-		}
-	}
 	if ctx.Err() != nil {
 		return
 	}
 	// precedence: the conversation agent's own binding → this conversation's pin → global.
 	ca := s.resolveChatAgent(c)
 	if ca == nil {
-		finishReason = s.chatUnavailableReason()
 		return
 	}
 	pg := s.m.pg
@@ -561,13 +525,11 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 	// On a manual stop ctx is cancelled; Chat already emits a clean "Stopped manually"
 	// step, so skip the raw-error entry — only surface genuine failures.
 	if _, err := ca.Chat(ctx, c.AgentKey, sessionID, msg, maxTurns, maxDuration, webSearch, emit); err != nil {
-		finishReason = err.Error()
 		if ctx.Err() == nil {
 			_, _ = pg.AppendConvActivity(c.ID, db.Activity{Worker: c.AgentKey, Kind: "text", IsError: true,
 				Summary: "(Error: " + err.Error() + ")", Detail: err.Error()})
 		}
 	} else {
-		finishStatus, finishReason = "completed", ""
 	}
 	_ = pg.TouchConversation(c.ID)
 }

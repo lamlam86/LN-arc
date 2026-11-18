@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 
+	actool "github.com/Autumn-27/norma/tool"
 	"github.com/hypnguyen1209/V-ARTEX/agent"
 	"github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/hypnguyen1209/V-ARTEX/intercept"
 	"github.com/hypnguyen1209/V-ARTEX/traffic"
-	actool "github.com/Autumn-27/norma/tool"
 )
 
 func migrateEnglishDefaults(ctx context.Context, pg *db.DB) error {
@@ -28,7 +28,7 @@ func legacyEnglishDefaults() db.LegacyEnglishDefaults {
 	// Constructors only capture handlers; metadata does not require live stores.
 	s := &Server{}
 	for _, group := range [][]actool.CoreTool{
-		traffic.SeedToolMetas(), s.orchestrationTools(), s.platformTools(), s.findingRetestTools(),
+		traffic.SeedToolMetas(), s.orchestrationTools(), s.platformTools(),
 	} {
 		for _, tool := range group {
 			defaults.ToolDefaults[tool.Name()] = db.EnglishToolDefault{Description: tool.Description(), Schema: tool.InputSchema()}

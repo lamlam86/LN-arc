@@ -217,7 +217,6 @@ VALUES($1,$2,0,'quota_exhausted','balance exhausted',$3,$4,$3)`, task.ID, llmPro
 	profileName := fmt.Sprintf("archive-profile-%d", task.ID)
 	skillName := fmt.Sprintf("archive-skill-%d", task.ID)
 	toolName := fmt.Sprintf("archive-tool-%d", task.ID)
-	vulnclass := fmt.Sprintf("archive-vuln-%d", task.ID)
 	if err := d.InsertLLMUsage(&LLMUsage{TaskID: fmt.Sprint(task.ID), ExplorationID: task.ExplorationID, Worker: "worker", Model: "test", ProfileName: profileName, InputTokens: 11, OutputTokens: 7}); err != nil {
 		t.Fatal(err)
 	}
@@ -231,9 +230,6 @@ VALUES($1,$2,0,'quota_exhausted','balance exhausted',$3,$4,$3)`, task.ID, llmPro
 		TaskID: fmt.Sprint(task.ID), Model: "archive-model", SessionID: "archive-session",
 		Status: "ok", RawRequest: strings.Repeat("request", 1024), RawResponse: strings.Repeat("response", 1024),
 	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := d.AddFinding(task.ID, nodeID, vulnclass, "archive finding", SeverityCritical, "summary", "evidence", "worker", []int64{assetID}); err != nil {
 		t.Fatal(err)
 	}
 	archive, err := d.QueueTaskArchive(task.ID)
@@ -288,7 +284,7 @@ VALUES($1,$2,0,'quota_exhausted','balance exhausted',$3,$4,$3)`, task.ID, llmPro
 	if _, ok := stats["tokens"]; !ok {
 		t.Fatalf("archive token summary missing: %#v", stats)
 	}
-	assertArchiveGlobalStats(t, d, profileName, skillName, toolName, vulnclass)
+	assertArchiveGlobalStats(t, d, profileName, skillName, toolName)
 	if _, err := d.Exec(`DELETE FROM companies WHERE id=$1`, companyID); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +355,7 @@ VALUES($1,$2,0,'quota_exhausted','balance exhausted',$3,$4,$3)`, task.ID, llmPro
 		t.Fatalf("LLM chain state/time mismatch: status=%s error=%q exhausted=%s created=%s",
 			restoredStatus, restoredError, restoredExhaustedAt, restoredCreatedAt)
 	}
-	assertArchiveGlobalStats(t, d, profileName, skillName, toolName, vulnclass)
+	assertArchiveGlobalStats(t, d, profileName, skillName, toolName)
 	if err := d.CompleteTaskArchiveRestore(archive.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +445,7 @@ func TestRecoverInterruptedArchiveRequiresManualRetry(t *testing.T) {
 	}
 }
 
-func assertArchiveGlobalStats(t *testing.T, d *DB, profileName, skillName, toolName, vulnclass string) {
+func assertArchiveGlobalStats(t *testing.T, d *DB, profileName, skillName, toolName string) {
 	t.Helper()
 	profiles, err := d.UsageByProfile()
 	if err != nil {
@@ -487,18 +483,5 @@ func assertArchiveGlobalStats(t *testing.T, d *DB, profileName, skillName, toolN
 	}
 	if tools[toolName] != 1 {
 		t.Fatalf("archive tool aggregate %q=%d, want 1", toolName, tools[toolName])
-	}
-	findings, err := d.FindingStats()
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundClass := false
-	for _, item := range findings.VulnClasses {
-		if item == vulnclass {
-			foundClass = true
-		}
-	}
-	if !foundClass {
-		t.Fatalf("archive finding class %q missing", vulnclass)
 	}
 }

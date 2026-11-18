@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hypnguyen1209/V-ARTEX/db"
-	"github.com/hypnguyen1209/V-ARTEX/intercept"
 	"github.com/Autumn-27/norma/agentcore"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/db"
+	"github.com/hypnguyen1209/V-ARTEX/intercept"
 )
 
 // MainAgent is the thin human-interface orchestrator (docs §4.2 / §7). The human
@@ -18,21 +18,20 @@ import (
 // (→planner) or direct high-priority intents (→frontier). It does NOT run the
 // autonomous intent-generation loop (that is the planner's job).
 type MainAgent struct {
-	findingRecorder FindingRecorder
-	prov            llm.Provider
-	model           string
-	tx              *transcript.Store                      // raw LLM conversation persistence (nil = off)
-	window          int                                    // context window in tokens (for compaction)
-	windowFn        func() int                             // optional dynamic task-chain minimum
-	maxTurns        int                                    // max agent turns per run (0 = unlimited)
-	proxyAddr       string                                 // recording proxy for WebFetch (empty = direct)
-	proxyCACert     string                                 // recording proxy's CA cert path (HTTPS verify)
-	webSearch       WebSearchOpts                          // web_search tool backend selection (off by default)
-	workDir         string                                 // shared work dir (surfaced in prompt as artifact-output target)
-	steerWork       func(intentID int64, msg string) error // engine callback: steer a running work (nil = off)
-	nonStreamingFn  func() bool                            // resolver: use non-streaming (Complete) path? (nil = streaming)
-	noaEnabledFn    func() bool                            // resolver: use experimental noa compaction? (nil = off)
-	maxTokensFn     func() int                             // resolver: per-reply output cap (nil/0 = send no cap)
+	prov           llm.Provider
+	model          string
+	tx             *transcript.Store                      // raw LLM conversation persistence (nil = off)
+	window         int                                    // context window in tokens (for compaction)
+	windowFn       func() int                             // optional dynamic task-chain minimum
+	maxTurns       int                                    // max agent turns per run (0 = unlimited)
+	proxyAddr      string                                 // recording proxy for WebFetch (empty = direct)
+	proxyCACert    string                                 // recording proxy's CA cert path (HTTPS verify)
+	webSearch      WebSearchOpts                          // web_search tool backend selection (off by default)
+	workDir        string                                 // shared work dir (surfaced in prompt as artifact-output target)
+	steerWork      func(intentID int64, msg string) error // engine callback: steer a running work (nil = off)
+	nonStreamingFn func() bool                            // resolver: use non-streaming (Complete) path? (nil = streaming)
+	noaEnabledFn   func() bool                            // resolver: use experimental noa compaction? (nil = off)
+	maxTokensFn    func() int                             // resolver: per-reply output cap (nil/0 = send no cap)
 }
 
 // SetNoaEnabled wires a resolver deciding whether runs use the experimental noa
@@ -84,34 +83,30 @@ func (m *MainAgent) SetSteerWork(fn func(intentID int64, msg string) error) { m.
 // mainAgentDefaultTmpl is the built-in EDITABLE body (section [A]) of the main agent
 // prompt, seeded into agent_prompts. Goal is a {{.Goal}} template var; the intermediate
 // artifact output rules are code-owned (artifactSpec), appended after rendering.
-const mainAgentDefaultTmpl = `You are the main agent in an authorized penetration testing system and the human operator's interface. You do not explore targets yourself or autonomously generate a stream of intents; that is the planner's job. Your responsibilities:
+const mainAgentDefaultTmpl = `You are the main agent in an authorized reconnaissance system and the human operator's interface. You do not explore targets yourself or autonomously generate a stream of intents; that is the planner's job. Your responsibilities:
+1. **Observe**: answer progress questions using graph_overview / list_facts / list_assets / get_worker_output.
+2. **Steer**: use add_hint to emphasize an asset class, technology, source, or area; use add_intent to inject a high-priority direction.
+3. **Goal management**: use set_goals to add a final objective and set_constraints to add allow/deny operating constraints.
+4. **Report**: summarize discovered assets, coverage, evidence, and gaps. Never invent results.
+5. **Scope discipline**: reconnaissance only. Never instruct workers to exploit, attack, brute force, bypass authentication, or modify target state.
 
-1. Observe: answer progress questions using graph_overview / list_findings / list_facts / list_assets / get_worker_output.
-2. Steer the system according to the user's requests:
-   - To change direction, emphasize a vulnerability class, or focus on an area, use add_hint; the planner reads it on its next round.
-   - To immediately test a specific target, use add_intent with a high priority (8–10). The system automatically returns a completed task to running, lets a worker execute this intent, then completes the task again.
-     **When all task objectives are already met** (all graph_overview goals are met), first consider whether the request implies a new desired outcome. If so, state the inferred objective in one sentence and **ask whether to register it as a formal objective**. If yes, call set_goals so regular autonomous planning resumes. If no, or the user only wants a temporary probe, submit just this intent with add_intent; the task completes after the worker finishes, without autonomous continuation. For an obvious one-off check that implies no new objective, submit directly without asking every time.
-   - To correct an actively running intent/work ("stop X, focus on Y"), use steer_work after checking get_worker_output. It preserves progress and takes effect before the worker's next action. If the whole direction is wrong, submit a different intent with add_intent.
-   - To add a final objective, use set_goals. The system writes it to the task graph and **automatically resumes completed/paused tasks**; the planner reassesses it without requiring a manual resume.
-   - To add/change operating constraints (allowed/prohibited actions such as "only this port", "no brute force", "passive reconnaissance only"), use set_constraints with type=allow or type=deny. Constraints enter planner/worker prompts on the next planning round to define exploration boundaries; users can also manage them in the overview.
-3. Reply concisely in plain English and explain your actions.
+Task goal: {{.Goal}}
 
-Current task objective: {{.Goal}}
+Current asset summary:
+{{.AssetSummary}}
 
-Never invent findings. Answer only from actual tool results.`
+Working directory: {{.DataDir}}
+Current time: {{.Now}}
+
+Be concise, factual, and operationally precise.`
 
 func mainAgentSystem(goal, dataDir, workDir string) string {
 	body := renderSystem("mainagent", mainAgentDefaultTmpl, MainVars{Goal: goal, DataDir: dataDir, Now: nowStr()})
 	return body + artifactSpec(workDir)
 }
 
-// Chat handles one human message and returns the assistant reply. emit, if
-// non-nil, receives each execution step (thinking / tool_use / tool_result /
-// text / result) so the main-agent session shows its work — exactly like the
-// worker/planner sessions — not just the final answer.
 func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.AssetStore, ts *db.ExplorationStore, goal, message string, emit func(db.Activity), notify, resume func(), notifyGoal, notifyHint func([]string)) (string, error) {
 	tsx := NewToolSet(ts, "human")
-	tsx.SetFindingRecorder(m.findingRecorder)
 	if as != nil {
 		tsx.SetAssetStore(as, as.Companies())
 	}

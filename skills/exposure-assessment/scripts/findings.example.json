@@ -1,0 +1,61 @@
+{
+  "target": "example.com",
+  "findings": [
+    {
+      "id": "F1",
+      "title": "Exposed .env with application secrets",
+      "category": "secrets",
+      "url": "https://app.example.com/.env",
+      "reachability": "anonymous",
+      "confirmation": "confirmed",
+      "data_class": "credentials",
+      "blast_radius": "environment",
+      "evidence": "HTTP 200, text/plain, KEY=VALUE lines including a database URL; value redacted",
+      "impact": "An anonymous visitor could obtain backend and integration credentials for this environment.",
+      "remediation": "Remove the file from the web root, rotate every secret it contained, and add a deploy check that blocks dotfiles.",
+      "limits": "The file was fingerprinted only; values were not used or stored."
+    },
+    {
+      "id": "F2",
+      "title": "Exposed Git metadata",
+      "category": "vcs",
+      "url": "https://staging.example.com/.git/HEAD",
+      "reachability": "anonymous",
+      "confirmation": "confirmed",
+      "data_class": "source",
+      "blast_radius": "host",
+      "evidence": "HTTP 200, body starts with 'ref: refs/'",
+      "impact": "Repository structure and possibly full history may be recoverable by an anonymous visitor.",
+      "remediation": "Block /.git/ at the web server and rebuild the deployment without VCS metadata.",
+      "limits": "Objects were not downloaded; no reconstruction attempted."
+    },
+    {
+      "id": "F3",
+      "title": "Spring Boot actuator reachable",
+      "category": "debug",
+      "url": "https://api.example.com/actuator/env",
+      "reachability": "anonymous",
+      "confirmation": "probable",
+      "data_class": "config",
+      "blast_radius": "platform",
+      "evidence": "HTTP 200, JSON with propertySources keys; full body not retrieved",
+      "impact": "Environment property names may reveal internal service topology and configuration.",
+      "remediation": "Disable or authenticate actuator endpoints; expose only health at the edge.",
+      "limits": "No secret values were extracted; response confirmed by structure only."
+    },
+    {
+      "id": "F4",
+      "title": "Public API schema",
+      "category": "api-docs",
+      "url": "https://api.example.com/openapi.json",
+      "reachability": "anonymous",
+      "confirmation": "confirmed",
+      "data_class": "docs",
+      "blast_radius": "host",
+      "evidence": "HTTP 200, JSON with openapi and paths keys",
+      "impact": "Endpoint names and parameters are discoverable, which slightly reduces recon effort.",
+      "remediation": "Publish docs only where intended; keep internal schemas off the public host.",
+      "limits": "Documentation is public by design on many APIs; confirm intent before removing."
+    }
+  ]
+}

@@ -41,7 +41,7 @@ var wrapupTurnDefaults = map[string]int{
 
 const genericWrapupTurns = 10
 
-const plannerWrapUpDefault = "Your planning round is nearly out of turns. Only this round is ending: the system will wake you again as the situation changes, so you do not need to conclude the entire task. Persist conclusions already reached without inventing intents just to wrap up (zero intents is a normal result): (1) Submit directions that should be dispatched now in one batch with add_intent; (2) Mark objectives already proven by findings/facts as met with prove_goal; (3) Record serial exploitation chains in TodoWrite so later rounds can continue step by step. Then end this round without a summary."
+const plannerWrapUpDefault = "Your planning round is nearly out of turns. Only this round is ending: the system will wake you again as the situation changes, so you do not need to conclude the entire task. Persist conclusions already reached without inventing intents just to wrap up (zero intents is a normal result): (1) Submit directions that should be dispatched now in one batch with add_intent; (2) Mark objectives already proven by facts as met with prove_goal; (3) Record remaining recon chains in TodoWrite so later rounds can continue step by step. Then end this round without a summary."
 
 const mainAgentWrapUpDefault = "You are nearly out of turns and this interaction is ending. Start no new exploration or operations. In a separate single plain-text sentence, summarize current progress, key conclusions, and the recommended next step for the user."
 
@@ -117,9 +117,9 @@ var taskTimeoutWrapupDefaults = map[string]string{
 	"planner": plannerTaskTimeoutDefault,
 }
 
-const workerTaskTimeoutDefault = "**The entire task has reached its timeout and is about to end** (this is the whole exploration deadline, not just your run budget). This is your last chance: (1) Persist all identified but unsaved results: new assets with insert_assets, exploration conclusions/facts with record_fact, and confirmed vulnerabilities with report_finding; (2) Start no new commands or probes; (3) Finish with a separate single plain-text sentence summarizing your key conclusions for this intent."
+const workerTaskTimeoutDefault = "**The entire task has reached its timeout and is about to end** (this is the whole exploration deadline, not just your run budget). This is your last chance: (1) Persist all identified but unsaved results: new assets with insert_assets and exploration conclusions/facts with record_fact; (2) Start no new commands or probes; (3) Finish with a separate single plain-text sentence summarizing your key conclusions for this intent."
 
-const plannerTaskTimeoutDefault = "**The entire task has reached its timeout and is about to end** (the whole task is terminating, not just this round). Make one final objective assessment using all current facts and findings: call prove_goal to mark every objective supported by evidence as met. **Generate no new intents**; they would no longer be executed. End after the assessment without a summary."
+const plannerTaskTimeoutDefault = "**The entire task has reached its timeout and is about to end** (the whole task is terminating, not just this round). Make one final objective assessment using all current facts: call prove_goal to mark every objective supported by evidence as met. **Generate no new intents**; they would no longer be executed. End after the assessment without a summary."
 
 // TaskTimeoutWrapupDefault returns an agent's built-in task-timeout text for UI placeholders or resetting defaults.
 func TaskTimeoutWrapupDefault(agentKey string) string {

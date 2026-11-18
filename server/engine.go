@@ -11,11 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Autumn-27/norma/harness"
+	"github.com/Autumn-27/norma/llm"
 	"github.com/hypnguyen1209/V-ARTEX/agent"
 	"github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/hypnguyen1209/V-ARTEX/intercept"
-	"github.com/Autumn-27/norma/harness"
-	"github.com/Autumn-27/norma/llm"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -585,10 +585,10 @@ type steerHooks struct {
 // resets that guard (norma/harness/query.go:534). This cap stops repeated tool/empty/nudge cycles exhausting the intent budget.
 const defaultEmptyTurnNudges = 2
 
-const goalMetWorkerWrapUpPrompt = "[Goal completion wrap-up] The task goal has been proven and the task is finalizing. Start no new commands or probes. Persist every identified but unsaved result now with insert_assets, record_fact, and report_finding. Then finish with one plain-text sentence summarizing the key conclusions for this intent."
+const goalMetWorkerWrapUpPrompt = "[Goal completion wrap-up] The task goal has been proven and the task is finalizing. Start no new commands or probes. Persist every identified but unsaved result now with insert_assets and record_fact. Then finish with one plain-text sentence summarizing the key conclusions for this intent."
 
 func goalMetWritebackTool(name string) bool {
-	return name == "insert_assets" || name == "record_fact" || name == "report_finding"
+	return name == "insert_assets" || name == "record_fact"
 }
 
 // emptyTurnNudge is the continuation instruction injected after an empty turn.
@@ -1091,9 +1091,9 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	var wrote agent.WriteCounts
 	var err error
 	if hasChatMessage {
-		reason, wrote, err = worker.ExecuteWithMessage(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding, requestID, message)
+		reason, wrote, err = worker.ExecuteWithMessage(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, nil, requestID, message)
 	} else {
-		reason, wrote, err = worker.Execute(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding)
+		reason, wrote, err = worker.Execute(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, nil)
 	}
 	e.EndLLMCall(t.ID)
 	// Retry model_error with backoff only while this work still owns the intent and the task
@@ -1110,9 +1110,9 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		}
 		e.BeginLLMCall(t.ID)
 		if hasChatMessage {
-			reason, wrote, err = worker.ExecuteWithMessage(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding, requestID, message)
+			reason, wrote, err = worker.ExecuteWithMessage(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, nil, requestID, message)
 		} else {
-			reason, wrote, err = worker.Execute(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding)
+			reason, wrote, err = worker.Execute(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, nil)
 		}
 		e.EndLLMCall(t.ID)
 	}
@@ -1121,11 +1121,10 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		e.isGoalSettling(t.ID) && goalSettlePrompted.CompareAndSwap(false, true) {
 		e.BeginLLMCall(t.ID)
 		var wrapWrote agent.WriteCounts
-		reason, wrapWrote, err = worker.ExecuteWithMessage(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding, "", goalMetWorkerWrapUpPrompt)
+		reason, wrapWrote, err = worker.ExecuteWithMessage(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, nil, "", goalMetWorkerWrapUpPrompt)
 		e.EndLLMCall(t.ID)
 		wrote.Facts += wrapWrote.Facts
 		wrote.Assets += wrapWrote.Assets
-		wrote.Findings += wrapWrote.Findings
 	}
 	// Capture kill state before detachWork cancels workCtx. kill = this work's
 	// ctx was cancelled (planner kill_work) while the TASK ctx kept running; a

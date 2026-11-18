@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LN-AI">
+  <defs>
+    <linearGradient id="grd" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="gl">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g fill="none" stroke="url(#grd)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" filter="url(#gl)">
+    <path d="M128 150V340H244"/>
+    <path d="M300 340V150L388 340V150"/>
+  </g>
+  <circle cx="420" cy="110" r="18" fill="#67E8F9"/>
+  <circle cx="420" cy="110" r="38" fill="none" stroke="#22D3EE" stroke-opacity=".45" stroke-width="3"/>
+</svg>

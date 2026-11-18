@@ -17,7 +17,7 @@ var PromptOverride func(agentKey string) (string, bool)
 // fails template execution and falls back to the built-in default.
 type PlannerVars struct{ Goal, Scope, AssetSummary, DataDir, Now string }
 type WorkerVars struct{ ProxyAddr, WorkerName, DataDir, Now string }
-type MainVars struct{ Goal, AssetSummary, FindingsSummary, DataDir, Now string }
+type MainVars struct{ Goal, AssetSummary, DataDir, Now string }
 type GoalsVars struct{ EngagementDescription, DataDir, Now string }
 
 // nowStr is the server-local wall-clock string exposed as the universal {{.Now}}

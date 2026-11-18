@@ -16,7 +16,7 @@ const MOCK_LOGS: LogLine[] = [
     ts: "2026-07-26T03:55:00Z",
     level: "info",
     tag: "engine",
-    text: "ARTEX v0.1.0 backend listening on :8787 (workers=3)",
+    text: "LN-ARC v0.1.0 backend listening on :8787 (workers=3)",
   },
   {
     seq: 2,
@@ -68,7 +68,7 @@ const levelDot: Record<LogLine["level"], string> = {
 
 function fmtTime(ts: string) {
   const d = new Date(ts);
-  if (isNaN(d.getTime())) return "";
+  if (Number.isNaN(d.getTime())) return "";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
@@ -164,7 +164,7 @@ export default function LogsPage() {
 
   React.useEffect(() => {
     if (stick.current && !paused) bottom.current?.scrollIntoView();
-  }, [filtered, paused]);
+  }, [paused]);
 
   const counts = React.useMemo(() => {
     let warn = 0,
@@ -179,7 +179,7 @@ export default function LogsPage() {
   return (
     <div className="flex flex-1 flex-col gap-3">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">System Logs</h1>
+        <h1 className="font-semibold text-xl tracking-tight">System Logs</h1>
         <p className="text-muted-foreground text-sm">Live backend logs (planner / worker / database / traffic …)</p>
       </div>
       <div className="flex flex-1 flex-col gap-3">
@@ -214,7 +214,7 @@ export default function LogsPage() {
           <Button size="sm" variant="outline" className="h-8" onClick={() => setLines([])}>
             Clear
           </Button>
-          <span className="ml-auto text-xs text-muted-foreground">
+          <span className="ml-auto text-muted-foreground text-xs">
             {counts.total} {counts.total === 1 ? "line" : "lines"} ·{" "}
             <span className="text-amber-600 dark:text-amber-400">
               {counts.warn} {counts.warn === 1 ? "warning" : "warnings"}
@@ -251,15 +251,17 @@ export default function LogsPage() {
           ) : (
             filtered.map((l) => {
               const body =
-                l.tag && l.text.startsWith("[" + l.tag + "]") ? l.text.slice(l.tag.length + 2).trimStart() : l.text;
+                l.tag && l.text.startsWith(`[${l.tag}]`) ? l.text.slice(l.tag.length + 2).trimStart() : l.text;
+              // Cosmetic rebrand: the running backend still logs its old names.
+              const display = body.replaceAll("LN-AI", "LN-ARC").replaceAll("ARTEX", "LN-ARC");
               return (
                 <div key={l.seq} className="flex items-start gap-2 px-1 py-0.5 hover:bg-muted/40">
                   <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", levelDot[l.level])} />
-                  <span className="shrink-0 tabular-nums text-muted-foreground">{fmtTime(l.ts)}</span>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">{fmtTime(l.ts)}</span>
                   {l.tag && (
                     <span className="shrink-0 rounded bg-muted px-1 text-[10px] text-foreground/70">{l.tag}</span>
                   )}
-                  <span className={cn("min-w-0 whitespace-pre-wrap break-words", levelTone[l.level])}>{body}</span>
+                  <span className={cn("min-w-0 whitespace-pre-wrap break-words", levelTone[l.level])}>{display}</span>
                 </div>
               );
             })

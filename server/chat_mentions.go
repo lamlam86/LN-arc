@@ -18,16 +18,16 @@ const maxChatMentions = 10
 // The visible token survives drafts, uploads, retries and conversation history.
 // Labels are only for display: the server trusts only the type and numeric ID.
 // Legacy labels remain valid in saved drafts and conversation history.
-var chatMentionPattern = regexp.MustCompile("@\\[(Finding|Asset|Company|Endpoint|IP|App|Domain|Subdomain|Service|\u6f0f\u6d1e|\u8d44\u4ea7|\u4f01\u4e1a|\u63a5\u53e3|\u5e94\u7528|\u57df\u540d|\u5b50\u57df\u540d|\u670d\u52a1)#([0-9]+)(?: [^\\]\\r\\n]*)?\\]")
+var chatMentionPattern = regexp.MustCompile("@\\[(Asset|Company|Endpoint|IP|App|Domain|Subdomain|Service|\u8d44\u4ea7|\u4f01\u4e1a|\u63a5\u53e3|\u5e94\u7528|\u57df\u540d|\u5b50\u57df\u540d|\u670d\u52a1)#([0-9]+)(?: [^\\]\\r\\n]*)?\\]")
 var chatMentionKinds = map[string]string{
-	"Finding": "finding", "Asset": "asset", "Company": "company", "Endpoint": "endpoint",
+	"Asset": "asset", "Company": "company", "Endpoint": "endpoint",
 	"IP": "ip", "App": "app", "Domain": "root_domain", "Subdomain": "subdomain", "Service": "service",
-	"\u6f0f\u6d1e": "finding", "\u8d44\u4ea7": "asset", "\u4f01\u4e1a": "company", "\u63a5\u53e3": "endpoint",
+	"\u8d44\u4ea7": "asset", "\u4f01\u4e1a": "company", "\u63a5\u53e3": "endpoint",
 	"\u5e94\u7528": "app", "\u57df\u540d": "root_domain", "\u5b50\u57df\u540d": "subdomain", "\u670d\u52a1": "service",
 }
 
 var chatMentionLabels = map[string]string{
-	"finding": "Finding", "asset": "Asset", "company": "Company", "endpoint": "Endpoint",
+	"asset": "Asset", "company": "Company", "endpoint": "Endpoint",
 	"ip": "IP", "app": "App", "root_domain": "Domain", "subdomain": "Subdomain", "service": "Service",
 }
 
@@ -146,16 +146,6 @@ func composeChatMentionMessage(pg *db.DB, message string) (string, error) {
 
 func loadChatMention(pg *db.DB, ref chatMentionRef) (any, error) {
 	switch ref.Kind {
-	case "finding":
-		f, err := pg.GetFinding(ref.ID)
-		if err != nil || f == nil {
-			return nil, err
-		}
-		assets, err := pg.Assets().GetByIDs(f.AssetIDs)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"finding": f, "assets": assets}, nil
 	case "company":
 		c, err := pg.Companies().GetCompany(ref.ID)
 		if err != nil || c == nil {

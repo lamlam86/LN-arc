@@ -1,54 +1,70 @@
 @echo off
-rem Switch the console to UTF-8 so this file's text displays correctly in GBK terminals.
-chcp 65001 >nul 2>&1
-rem ARTEX supervisor script (Windows)
-rem
-rem Usage:
-rem   start.bat                  Run in the foreground (Ctrl-C to stop)
-rem   start.bat -addr :9000      Pass extra arguments through to artex unchanged
-rem
-rem Run artex.exe and decide whether to restart it based on its exit code.
-rem
-rem   0      Normal user stop    -> Exit the loop
-rem   75     Restart requested   -> Restart immediately (after "One-click Update" or "Rollback" in the UI)
-rem   Other  Crash               -> Restart with backoff (1->2->4… up to 60 seconds)
-rem
-rem artex handles downloads, SHA256 verification, and binary replacement at startup
-rem in the selfupdate package. Keep this script simple; see the explanation at the top of start.sh.
+title LN-ARC - Starting...
 
-setlocal enabledelayedexpansion
-cd /d "%~dp0"
+echo.
+echo  _     _   _       _    ___
+echo ^| ^|   ^| \ ^| ^|     / \  ^|_ _^|
+echo ^| ^|   ^|  \^| ^|    / _ \  ^| ^|
+echo ^| ^|___^|\   ^| ^|  / ___ \ ^| ^|
+echo ^|_____^|_^|\_/^|_^| /_/   \_\___^|
+echo.
+echo   AI Autonomous Reconnaissance Console
+echo   Starting backend + frontend...
+echo.
 
-set "BIN=artex.exe"
-if not exist "%BIN%" (
-	echo [artex] Executable not found: %BIN% 1>&2
-	exit /b 1
+:: Set environment
+set ARTEX_PG_DSN=postgres://artex:change-me-please@localhost:5432/artex?sslmode=disable
+set ARTEX_ADMIN_PASSWORD=admin123
+set ARTEX_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://192.168.100.1:3000
+
+:: Check Docker is running
+docker info >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Docker is not running! Please start Docker Desktop first.
+    echo Press any key to exit...
+    pause >nul
+    exit /b 1
 )
 
-set "RESTART_CODE=75"
-set "MAX_DELAY=60"
-set /a delay=1
-
-:loop
-"%BIN%" %*
-set "code=!ERRORLEVEL!"
-
-if "!code!"=="0" (
-	echo [artex] Exited normally
-	exit /b 0
+:: Check Docker PostgreSQL
+docker ps --filter "name=lnai-postgres" --format "{{.Status}}" 2>nul | findstr /i "Up" >nul
+if errorlevel 1 (
+    echo [DB] Starting PostgreSQL...
+    docker start lnai-postgres 2>nul || docker run -d --name lnai-postgres -e POSTGRES_USER=artex -e POSTGRES_PASSWORD=change-me-please -e POSTGRES_DB=artex -p 5432:5432 postgres:16-alpine
+    if errorlevel 1 (
+        echo [ERROR] Failed to start PostgreSQL container!
+        echo Press any key to exit...
+        pause >nul
+        exit /b 1
+    )
+    echo [DB] Waiting for PostgreSQL to be ready...
+    timeout /t 5 /noq >nul
+) else (
+    echo [DB] PostgreSQL already running
 )
 
-if "!code!"=="%RESTART_CODE%" (
-	rem Update/rollback is ready: artex replaces the binary at the next startup.
-	echo [artex] Restart requested: applying the new version…
-	set /a delay=1
-	goto loop
+:: Check if backend binary exists
+if not exist "%~dp0dist\artex-windows-amd64\lnai.exe" (
+    echo [ERROR] Backend binary not found at dist\artex-windows-amd64\lnai.exe
+    echo Press any key to exit...
+    pause >nul
+    exit /b 1
 )
 
-echo [artex] Unexpected exit ^(code=!code!^), restarting in !delay!s 1>&2
-rem timeout fails in redirected consoles; use ping instead (N seconds requires N+1 pings).
-set /a pings=!delay!+1
-ping -n !pings! 127.0.0.1 >nul 2>&1
-set /a delay=!delay!*2
-if !delay! gtr %MAX_DELAY% set /a delay=%MAX_DELAY%
-goto loop
+:: Start backend - NOW WITH VISIBLE OUTPUT
+echo [BACKEND] Starting LN-ARC backend on :8787...
+start "" cmd /c "title LN-ARC Backend && "%~dp0dist\artex-windows-amd64\lnai.exe" 2>&1 || (echo. && echo [BACKEND CRASHED] Press any key to close... && pause >nul)"
+
+timeout /t 3 /noq >nul
+
+:: Start frontend
+echo [FRONTEND] Starting Next.js on :3000...
+echo.
+echo ========================================
+echo   Open http://localhost:3000 in browser
+echo   Login: LN-ARC  /  Password: admin123
+echo ========================================
+echo.
+
+cd /d "%~dp0web"
+call npx next dev

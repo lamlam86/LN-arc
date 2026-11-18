@@ -7,13 +7,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hypnguyen1209/V-ARTEX/db"
-	"github.com/hypnguyen1209/V-ARTEX/intercept"
 	"github.com/Autumn-27/norma/agentcore"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/db"
+	"github.com/hypnguyen1209/V-ARTEX/intercept"
 )
 
 // Planner is the event-driven LLM planner (docs §4.3): each time the asset or
@@ -21,7 +21,6 @@ import (
 // assets, judges whether the task goal is met, and emits 0..N exploration intents
 // into the frontier. It is the sole intent generator.
 type Planner struct {
-	findingRecorder   FindingRecorder
 	prov              llm.Provider
 	model             string
 	tx                *transcript.Store                      // raw LLM conversation persistence (nil = off)
@@ -42,7 +41,7 @@ type Planner struct {
 
 	// todos keeps ONE plan-scratchpad per task (keyed by exploration id) so the
 	// planner's multi-step plan survives across wake-ups — each Plan() is a fresh
-	// session, but the shared store lets it record a serial exploit chain once and
+	// session, but the shared store lets it record a serial recon chain once and
 	// dispatch it step-by-step over rounds instead of front-loading it in parallel.
 	todoMu sync.Mutex
 	todos  map[int64]*actool.TodoStore
@@ -148,7 +147,6 @@ func renderPlannerTodos(items []actool.Todo) string {
 // overview. Kind:
 //
 //	"done" - a worker finished intent IntentID (its output conclusion is fetched).
-//	"finding" - a worker reported a finding on intent IntentID (Detail = summary).
 //	"goal" - the human (via the main Agent's set_goals) added one or more goals in a
 //	    single call (Goals = newly added goal text; set_goals supports batches).
 //	"goal_deleted" - the human deleted a goal in overview goal management (Detail = deleted text).
@@ -167,8 +165,7 @@ type TriggerEvent struct {
 }
 
 // renderTriggers spells out the change(s) that fired this round: for a finished
-// worker — which intent + its output conclusion; for a finding — which intent +
-// what was found. Empty for time/heartbeat wakes. Reads the store (best-effort;
+// worker — which intent + its output conclusion. Empty for time/heartbeat wakes. Reads the store (best-effort;
 // a blank field never blocks the round).
 func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 	if len(evs) == 0 || ts == nil {
@@ -194,8 +191,6 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 			b.WriteString(fmt.Sprintf("\n- The human deleted this goal: %s. Reassess remaining goals/directions; no further intents are needed for the removed goal.", ev.Detail))
 		case "goal_edited":
 			b.WriteString(fmt.Sprintf("\n- The human changed a goal from '%s' to '%s'. Adjust exploration for the new goal and stop dispatching obsolete directions.", ev.OldGoal, ev.NewGoal))
-		case "finding":
-			b.WriteString(fmt.Sprintf("\n- The worker for intent #%d (%s) reported a finding: %s", ev.IntentID, intentSummary(ts, ev.IntentID), ev.Detail))
 		case "cancelled":
 			// Prefer Summary captured at deletion; hard deletion removes the node, so intentSummary cannot retrieve it.
 			sm := ev.Summary
@@ -210,7 +205,7 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 			}
 		}
 	}
-	b.WriteString("\n(Use node_detail / get_worker_output / list_findings for full details.)")
+	b.WriteString("\n(Use node_detail / get_worker_output for full details.)")
 	return b.String()
 }
 
@@ -295,49 +290,40 @@ func renderGraphOverview(data map[string]any) string {
 // plannerDefaultTmpl is the built-in EDITABLE body (section [A]) of the planner prompt,
 // seeded into agent_prompts. Goal is a {{.Goal}} template var; the intermediate artifact output rules
 // tail is code-owned (artifactSpec) and appended by plannerSystem after rendering.
-const plannerDefaultTmpl = `You are the planner in an authorized penetration testing system, awakened frequently when the graph changes. Read the situation → assess objectives → add exploration intents **only for genuinely new, uncovered directions**. Your deliverables are intents or objective assessments; do not execute worker work during planning.
+const plannerDefaultTmpl = `You are the planner in an authorized reconnaissance system, awakened frequently when the graph changes. Read the situation → assess objectives → add exploration intents only for genuinely new, uncovered directions. Your deliverables are intents or objective assessments; do not execute worker work during planning.
 
 Task objective: {{.Goal}}
 
 **How many intents should this round produce?**
-- **Mandatory minimum, highest priority**: if objectives remain unmet and there are **no open or running intents** (frontier_open=0 and running_intents is empty), you **must** produce at least one intent advancing the objective. Nothing is running or queued to wait for, so zero intents would stall the task. Even when known directions appear only in recent_done, open or continue a direction using the done/exhausted/blocked rules below.
-- Otherwise, zero intents is valid only with a reason: (1) all considered directions are already covered by open/running intents; duplicate intents with different wording are a serious error; or (2) the next step depends on an actual result from running work, so dispatch must wait for the next graph update.
-- Dispatch a new direction when it is uncovered and independent of running work, or when unmet objectives still have untested in-scope surfaces. Do not default to zero as a shortcut.
+- **Mandatory minimum, highest priority**: if objectives remain unmet and there are no open or running intents (frontier_open=0 and running_intents is empty), you must produce at least one intent advancing the objective. Nothing is running or queued to wait for, so zero intents would stall the task.
+- Otherwise, zero intents is valid only with a reason: (1) all considered directions are already covered by open/running intents, or (2) the next step depends on an actual result from running work, so dispatch must wait for the next graph update.
 
 **Decision process on every wake-up:**
 
-1. **The full situation is attached below**, as graph_overview output; do not call it again. It includes task (original title + objective/root node), asset counts, goals/statuses, open/running/recent_done intents, sites_without_endpoints (possible unexplored directions), facts (exploration facts, distinct from vulnerabilities), and recent_facts ({id,summary,confidence?}).
-   - **Scope**: goals/intents/facts/findings belong to this task. **Assets are shared globally**; counts describe all in-scope assets, not exclusively this task. Ignore irrelevant assets.
-   - **Lineage**: intents have parents (upstream facts/intents) and yields (downstream facts/findings); each recent_facts entry has from_intent. Use these relationships to understand evidence origins and combine new directions.
-   - **Negative/uncertain observations**, such as "port closed" or "not injectable", are worker observations, not final judgments. Read node_detail(id) evidence first. Treat a direction as temporarily closed only when evidence is strong, confidence=observed, and reasonable techniques were exhausted. Missing evidence, a single probe, speculation, or confidence=inferred means unresolved. If in scope and uncovered, normally dispatch one verification intent to confirm or refute it. **Recheck the same negative direction at most once**; respect a repeated, reasonably evidenced negative conclusion.
-   - Fetch deeper details only as needed: list_facts (paginated, newest first, default 20, q filtering, before pagination, total/has_more), list_findings (all findings), node_detail(id) (complete evidence/details), list_assets (q search, type/company_id/task_id filters, pagination, or direct id/ids retrieval), asset_neighbors. Do not retrieve every globally shared asset by default.
+1. **The full situation is attached below**, as graph_overview output; do not call it again. It includes the task, asset counts, goals/statuses, open/running/recent_done intents, sites_without_endpoints, facts, and recent_facts.
+   - Scope: goals/intents/facts belong to this task. Assets are shared globally; ignore irrelevant assets.
+   - Lineage: intents have parents and yields; each recent_facts entry has from_intent. Use these relationships to understand evidence origins.
+   - Fetch deeper details only as needed: list_facts (paginated, newest first, q filtering), node_detail(id), list_assets (DSL query), list_companies, add_task_scope, list_untested_assets.
 
-2. **Assess objectives, your core responsibility.** The goals field includes objectives and status. For an unmet objective proved by a finding/fact, call prove_goal(goal_id, evidence_id, reason) to mark met. **Marking the last unmet objective automatically completes the whole task**; completion is driven only by individual prove_goal calls.
-   - **Verify quantitative acceptance criteria before approval.** For required coverage, flag counts, or privileges, compare actual graph_overview values (coverage.pct, findings_total, etc.) before prove_goal. If the threshold is unmet, do not mark met; dispatch work for the gap. "Mostly done" or "the core is done" is not sufficient. Example: required coverage 100%, measured coverage.pct=40% → unmet, continue testing.
+2. **Assess objectives, your core responsibility.** The goals field includes objectives and status. For an unmet objective proved by a fact, call prove_goal(goal_id, evidence_id, reason). Marking the last unmet objective automatically completes the whole task.
+   - Verify quantitative acceptance criteria before approval. For required coverage or host counts, compare actual graph_overview values (coverage.pct, asset counts) before prove_goal. If the threshold is unmet, dispatch work for the gap.
 
-3. **Optional, minimal startup probing for understanding.** Only when the graph has almost no facts (recent_facts effectively empty, task just started) and the situation cannot support a concrete initial intent, use very few read-only probes, such as 1–2 curl requests for a homepage/fingerprint. **The only permitted deliverable is a more precise intent**, never vulnerability discovery/verification/exploitation or endpoint/directory/parameter enumeration; those belong to workers. Three hard limits:
-   - Once worker facts exist (facts>0 / recent_facts nonempty), **do not probe yourself**. Base judgments on facts and only dispatch intents or finish. Assign deeper investigation to a worker.
-   - Even at startup, stop after at most 3 probes. If you begin detailed verification rather than quick direction setting (endpoint/directory/ID enumeration, decoding chains, repeated requests to one interface, injection/access control/vulnerability tests), stop immediately and express it as an intent.
-   - If existing facts/situation suffice, do not probe.
+3. **Optional, minimal startup probing for understanding.** Only when the graph has almost no facts and the situation cannot support a concrete initial intent, use very few read-only probes, such as 1–2 curl requests for a homepage or fingerprint. The only permitted deliverable is a more precise intent. Never run vulnerability tests or exploitation; those are out of scope for this system. Stop after at most 3 probes.
 
-4. **Choose new directions.** Restraint means avoiding duplicate intents, not minimizing useful work. With unmet objectives, ask which deeper, stronger, uncovered approaches could advance them. Intents are open exploration directions, not a fixed menu. Compare each proposed direction against open + running + recent_done:
+4. **Choose new directions.** Restraint means avoiding duplicate intents, not minimizing useful work. With unmet objectives, ask which deeper, stronger, uncovered recon approaches could advance them. Intents are open exploration directions, not a fixed menu. Compare each proposed direction against open + running + recent_done:
    - Covered by open/running → do not regenerate.
-   - Appears in recent_done → inspect its state before deciding:
-     · **done**: already covered; do not resend unchanged. Judge dead ends from yielded facts, not state. Redispatch only for a materially new mechanism (new fact/asset/parameter/substantially different technique), explaining the difference in summary. Rewording or hoping a retry succeeds does not count.
-     · **exhausted** (budget ended mid-investigation with partial write-back) / **blocked** (model/network failure, little investigation): inspect get_worker_trace / get_worker_output for actual progress and blockers. Continue from saved progress if a breakthrough was close; redispatch for a purely external failure; change approach/direction for repeated identical blockers. Use real trace progress, not the state alone.
+   - Appears in recent_done → inspect its state before deciding. Redispatch only for a materially new mechanism (new fact/asset/parameter/source), explaining the difference.
    - Entirely new, uncovered direction → dispatch.
-   - All known directions covered by still-open/running work → finish without new intents and await progress. If only recent_done remains and objectives are unmet, the mandatory minimum above applies.
-   - **Depth before coverage.** Coverage is an acceptance minimum, not the exploration objective. Prioritize exploiting promising RCE/privilege escalation/data disclosure entry points thoroughly over shallow checks across every asset.
-   - **Maintain route diversity.** If current work crowds one route/entry point and a fundamentally different uncovered surface/asset class/chain exists, add that route before adding synonyms along the same one. Keep ideally 2–3 routes with distinct mechanisms (e.g. upload and authentication bypass), concentrating only after evidence of objective progress. Do not duplicate an already covered alternative. **Diversity always obeys operating constraints**: excluded entry points/ports/hosts/operations must never become intents.
+   - All known directions covered by still-open/running work → finish without new intents.
+   - **Depth before coverage.** Coverage is an acceptance minimum, not the objective. Prefer completely enumerating a promising surface (API routes, endpoints, parameters, certificates) over shallow checks across every asset.
+   - **Maintain route diversity.** If current work crowds one route, add a fundamentally different uncovered surface or source before adding synonyms along the same one. Diversity always obeys operating constraints.
 
-   **Dispatch serial exploitation chains step by step.** In ①→②→③, later steps depend on earlier actual output; do not dispatch them all in parallel before prerequisites exist. Record the full chain with TodoWrite, one item per step. Dispatch only steps whose prerequisites are met (usually the first), then after facts arrive dispatch the next step on a later wake-up and mark satisfied items completed. Do not split the same action into "confirm trigger" and "trigger it". Parallel intents are only for independent dimensions, such as unrelated endpoints.
+5. **Submit** the chosen directions with one add_intent call (intents array, at most 4 highest-value directions):
+   - summary: one natural-language sentence with the target's full address, action, and reason.
+   - asset_ids: target asset IDs whenever a direction targets a specific site/endpoint/host.
+   - parent_ids: optional upstream fact node IDs supporting this direction.
 
-5. **Submit** the chosen directions with **one** add_intent call (intents array, at most 4 highest-value directions; no repeated individual calls):
-   - **summary**: one natural-language sentence with the target's full address, action, and reason. Avoid fixed categories; this is the main deduplication description.
-   - **asset_ids**: target asset IDs (0/1/multiple, from list_assets). Include them whenever a direction targets a specific site/endpoint/parameter/host, for coverage deduplication and graph linkage. Include all assets for cross-asset work; leave empty only for global reconnaissance with no specific asset.
-   - **parent_ids**: optional upstream node IDs (0/1/multiple) supporting this direction. Include every fact synthesized into it, or its source intent/finding; leave empty for entirely new top-level directions.
-
-Do not duplicate or fabricate work, but dispatch uncovered, deeper approaches when objectives remain unmet. Be concise, focused, and efficient.`
+Do not duplicate or fabricate work, but dispatch uncovered, deeper reconnaissance when objectives remain unmet. Be concise, focused, and efficient.`
 
 func plannerSystem(goal, dataDir, workDir string) string {
 	body := renderSystem("planner", plannerDefaultTmpl, PlannerVars{Goal: goal, DataDir: dataDir, Now: nowStr()})
@@ -359,7 +345,6 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	// runs in a detached goroutine so it never adds latency to this round.
 	p.compactor.OnPlannerRound(ctx, ts)
 	tsx := NewToolSet(ts, "planner")
-	tsx.SetFindingRecorder(p.findingRecorder)
 	if as != nil {
 		tsx.SetAssetStore(as, as.Companies())
 	}
@@ -458,7 +443,7 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 			lead = "This is a **scheduled heartbeat**, and there are **no open or running intents**: no workers are active or queued, so exploration has stalled. You **must** create one or more new, goal-directed intents **distinct from existing graph intents** this turn (zero intents is prohibited). First assess whether goals are met from the overview below; if not, add directions immediately:"
 		}
 	}
-	input := lead + situational + "\n\nAssess goals from the overview above. Use prove_goal for each goal truly achieved (the required outcome obtained or vulnerability confirmed). **Hard requirement: if goals remain unmet and there are no open or running intents (frontier_open=0 and running_intents empty), create at least one goal-directed intent this turn. There is no running work to await or queued direction; zero intents means the task stalls. You may omit new intents only while open/running intents are making progress or goals are already achieved.**" +
+	input := lead + situational + "\n\nAssess goals from the overview above. Use prove_goal for each goal truly achieved (the required outcome obtained or coverage target reached). **Hard requirement: if goals remain unmet and there are no open or running intents (frontier_open=0 and running_intents empty), create at least one goal-directed intent this turn. There is no running work to await or queued direction; zero intents means the task stalls. You may omit new intents only while open/running intents are making progress or goals are already achieved.**" +
 		renderPlannerTodos(opts.Todos.List())
 	// MaxDuration interrupts running tools at the deadline and settles immediately on a live ctx, so a
 	// stuck turn cannot bypass settlement and needs no external hard timeout. ctx handles only pause/kill/shutdown.

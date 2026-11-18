@@ -19,16 +19,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hypnguyen1209/V-ARTEX/agent"
-	"github.com/hypnguyen1209/V-ARTEX/db"
-	"github.com/hypnguyen1209/V-ARTEX/intercept"
-	"github.com/hypnguyen1209/V-ARTEX/llmpool"
-	"github.com/hypnguyen1209/V-ARTEX/llmrec"
-	"github.com/hypnguyen1209/V-ARTEX/report"
-	"github.com/hypnguyen1209/V-ARTEX/traffic"
 	"github.com/Autumn-27/norma/llm"
 	actool "github.com/Autumn-27/norma/tool"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/agent"
+	"github.com/hypnguyen1209/V-ARTEX/db"
+	"github.com/hypnguyen1209/V-ARTEX/intercept"
+	"github.com/hypnguyen1209/V-ARTEX/llmrec/llmpool"
+	"github.com/hypnguyen1209/V-ARTEX/llmrec"
+	"github.com/hypnguyen1209/V-ARTEX/traffic"
 )
 
 // BuildVersion is the backend application version, injected from cmd/artex at
@@ -36,7 +35,7 @@ import (
 // Defaults to "dev" for local builds. Exposed to the frontend via GET /api/health.
 var BuildVersion = "dev"
 
-// Server exposes the ARTEX backend over a JSON HTTP API for the shadcn/ui
+// Server exposes the LN-AI backend over a JSON HTTP API for the shadcn/ui
 // frontend.
 type Server struct {
 	m         *Manager
@@ -232,15 +231,11 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		}
 		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // Assemble visible skills/MCP and traffic/orchestration host tools into agents.
 		domainReg := buildDomainReg(m.Assets())
-		wireTools(m.pg, domainReg) // Built-in tool catalog: filter by agent, override description/schema, inject defaults.
-		seedPrompts(m.pg)          // Seed built-in prompt bodies into agent_prompts only when empty.
-		s.seedOrchestrationTools() // Seed P2 cross-task orchestration tools with configurable agent bindings.
-		if err := s.seedFindingRetester(); err != nil {
-			log.Printf("[retester] seed: %v", err)
-		}
-		s.startBackground(func() { s.evidenceStore().RunGC(s.ctx) })
+		wireTools(m.pg, domainReg)                               // Built-in tool catalog: filter by agent, override description/schema, inject defaults.
+		seedPrompts(m.pg)                                        // Seed built-in prompt bodies into agent_prompts only when empty.
+		s.seedOrchestrationTools()                               // Seed P2 cross-task orchestration tools with configurable agent bindings.
 		s.seedPythonInterpreter()                                // Detect and persist Python interpreter at startup only when unset.
-		s.startBackground(func() { newScheduler(s).Run(s.ctx) }) // P3 trigger scheduling (timers, findings, goals), custom agents only.
+		s.startBackground(func() { newScheduler(s).Run(s.ctx) }) // P3 trigger scheduling (timers, goals), custom agents only.
 		// Finding IM delivery engine runs independently of Scheduler: its three-second latency
 		// differs from trigger cadence, and a blocked notification must not affect agent triggers.
 		s.startBackground(func() { newNotifier(s).Run(s.ctx) })
@@ -791,20 +786,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/companies/reattribute", s.reattribute)
 
 	mux.HandleFunc("GET /api/exploration/frontier", s.frontier)
-	mux.HandleFunc("GET /api/exploration/findings", s.findings)
-	mux.HandleFunc("GET /api/exploration/findings/groups", s.findingGroups)
-	mux.HandleFunc("GET /api/exploration/findings/asset-tree", s.findingAssetTree)
-	mux.HandleFunc("GET /api/exploration/findings/stats", s.findingStats)
-	mux.HandleFunc("GET /api/exploration/findings/export", s.findingsExport)
-	s.registerFindingTraffic(mux)
-	mux.HandleFunc("GET /api/exploration/findings/{id}", s.getFinding)
-	mux.HandleFunc("GET /api/exploration/findings/{id}/lineage", s.findingLineage)
-	mux.HandleFunc("POST /api/exploration/findings/{id}/deepen", s.deepenFinding)
-	mux.HandleFunc("GET /api/exploration/findings/{id}/retests", s.listFindingRetests)
-	mux.HandleFunc("GET /api/exploration/findings/retests/active", s.listActiveFindingRetests)
-	mux.HandleFunc("POST /api/exploration/findings/{id}/retests", s.startFindingRetest)
-	mux.HandleFunc("PATCH /api/exploration/findings/{id}", s.patchFinding)
-	mux.HandleFunc("DELETE /api/exploration/findings/{id}", s.deleteFinding)
 	mux.HandleFunc("GET /api/exploration/intents", s.intents)
 	mux.HandleFunc("GET /api/exploration/graph", s.explorationGraph)
 	mux.HandleFunc("GET /api/exploration/nodes", s.explorationNodes)
@@ -848,7 +829,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/notify/deliveries", s.notifyListDeliveries)
 	mux.HandleFunc("POST /api/notify/deliveries/{id}/retry", s.notifyRetryDelivery)
 	mux.HandleFunc("POST /api/settings/web-search/test", s.testWebSearch)
-	mux.HandleFunc("GET /api/report", s.getReport)
 	mux.HandleFunc("GET /api/chat/mentions", s.searchChatMentions)
 	mux.HandleFunc("POST /api/chat", s.chat)
 	mux.HandleFunc("POST /api/chat/upload", s.chatUpload) // Method 1: upload into conversation/task working-directory uploads/.
@@ -983,7 +963,7 @@ func (s *Server) Handler() http.Handler {
 // --- handlers ---
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "service": "artex", "version": BuildVersion})
+	writeJSON(w, 200, map[string]any{"ok": true, "service": "ln-ai", "version": BuildVersion})
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
@@ -1094,12 +1074,6 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		dto.GoalsTotal = metric.Goals.Total
 		dto.GoalsMet = metric.Goals.Met
 		dto.InFlight = metric.RunningIntents
-		dto.Findings = FindingSeverityDTO{
-			Critical: metric.Findings.Critical,
-			High:     metric.Findings.High,
-			Medium:   metric.Findings.Medium,
-			Low:      metric.Findings.Low,
-		}
 		dtos = append(dtos, dto)
 	}
 	writeJSON(w, 200, map[string]any{"tasks": dtos, "active": active})
@@ -1217,7 +1191,7 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 }
 
 // rerunIntent resets blocked/exhausted/stopped to open for workers to claim and restart.
-// Existing facts/findings/assets remain; terminal/paused tasks are also revived.
+// Existing facts/assets remain; terminal/paused tasks are also revived.
 // Supports retrying failed work after network/LLM instability.
 func restoreRerunIntent(t *Task, before *db.Node) error {
 	if t == nil || before == nil {
@@ -1824,8 +1798,8 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, g)
 }
 
-// taskAssetRefs returns the intents / facts / findings in this task anchored to a
-// given asset id, powering the coverage node drawer's associated intents/facts.
+// taskAssetRefs returns the intents / facts in this task anchored to a given
+// asset id, powering the coverage node drawer's associated intents/facts.
 func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1844,7 +1818,6 @@ func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	}
 	intents := []CoverageAssetRefDTO{}
 	facts := []CoverageAssetRefDTO{}
-	findings := []CoverageAssetRefDTO{}
 	for _, ref := range refs {
 		dto := coverageAssetRefDTO(ref)
 		switch ref.Kind {
@@ -1852,11 +1825,9 @@ func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 			intents = append(intents, dto)
 		case "fact":
 			facts = append(facts, dto)
-		case "finding":
-			findings = append(findings, dto)
 		}
 	}
-	writeJSON(w, 200, map[string]any{"intents": intents, "facts": facts, "findings": findings})
+	writeJSON(w, 200, map[string]any{"intents": intents, "facts": facts})
 }
 
 // taskScopeList returns a task's scope rows (coverage denominator sources).
@@ -1946,463 +1917,6 @@ func (s *Server) frontier(w http.ResponseWriter, r *http.Request) {
 	}
 	fr, _ := t.Store.Frontier(atoiDefault(r.URL.Query().Get("limit"), 100))
 	writeJSON(w, 200, taskNodeDTOs(fr))
-}
-
-func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
-	// Without task: global Findings reads independent findings, which survive task deletion.
-	// With task: task overview/Findings tab reads exploration_nodes, which live with the task.
-	q := r.URL.Query()
-	taskParam := q.Get("task")
-	if taskParam == "" {
-		// page/limit enables server pagination {items,total,...}; omitted returns a bare array for dashboard aggregates,
-		// matching intent endpoint compatibility. Filtering/sorting are pushed into SQL.
-		if q.Get("page") == "" && q.Get("limit") == "" {
-			fs, _ := s.m.pg.ListFindings(500)
-			assets := s.resolveFindingAssets(fs)
-			out := make([]FindingDTO, 0, len(fs))
-			for _, f := range fs {
-				out = append(out, findingFromDB(f, assets))
-			}
-			writeJSON(w, 200, out)
-			return
-		}
-		page := findingPaginationParam(q.Get("page"), 1, 0)
-		limit := findingPaginationParam(q.Get("limit"), 20, 200)
-		fs, total, err := s.m.pg.ListFindingsPage(findingFilterFromQuery(q), page, limit)
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		assets := s.resolveFindingAssets(fs)
-		out := make([]FindingDTO, 0, len(fs))
-		for _, f := range fs {
-			out = append(out, findingFromDB(f, assets))
-		}
-		writeJSON(w, 200, map[string]any{"items": out, "total": total, "page": page, "page_size": limit})
-		return
-	}
-	t := s.m.ResolveTask(taskParam)
-	if t == nil {
-		writeJSON(w, 200, []any{})
-		return
-	}
-	f, err := t.Store.ListByKind(db.KindFinding, 200)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	tid, _ := strconv.ParseInt(t.ID, 10, 64)
-	meta, err := s.m.pg.FindingMetaByNodeID(tid)
-	if err != nil {
-		log.Printf("[findings] task=%s meta: %v", t.ID, err)
-	}
-	var aidSet []int64
-	for _, m := range meta {
-		aidSet = append(aidSet, m.AssetIDs...)
-	}
-	assets := s.resolveAssetIDs(aidSet)
-	out := findingDTOsForTask(t, f, meta, assets)
-
-	// Related-task findings are a live, read-only view. Provenance metadata lets
-	// the task UI suppress mutation affordances while retaining stable ids.
-	sources, err := t.Store.DirectSourceStores()
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	for _, source := range sources {
-		nodes, listErr := source.Store.ListByKind(db.KindFinding, 200)
-		if listErr != nil {
-			writeErr(w, 500, listErr.Error())
-			return
-		}
-		for _, node := range nodes {
-			node.SourceTaskID = source.Task.TaskID
-			node.Inherited = true
-		}
-		sourceMeta, metaErr := s.m.pg.FindingMetaByNodeID(source.Task.TaskID)
-		if metaErr != nil {
-			log.Printf("[findings] source_task=%d meta: %v", source.Task.TaskID, metaErr)
-		}
-		var sourceAssetIDs []int64
-		for _, item := range sourceMeta {
-			sourceAssetIDs = append(sourceAssetIDs, item.AssetIDs...)
-		}
-		out = append(out, findingDTOsForOwner(
-			i64s(source.Task.TaskID),
-			source.Task.Description,
-			nodes,
-			sourceMeta,
-			s.resolveAssetIDs(sourceAssetIDs),
-		)...)
-	}
-	writeJSON(w, 200, out)
-}
-
-// normFilter maps the frontend's "all" sentinel (and empty) to "" so the DB layer
-// treats it as no filter.
-func normFilter(v string) string {
-	if v == "all" {
-		return ""
-	}
-	return v
-}
-
-// resolveFindingAssets loads every asset anchored by the given findings, keyed by
-// id, so each finding DTO can render its assets' labels.
-func (s *Server) resolveFindingAssets(fs []*db.DBFinding) map[int64]*db.Asset {
-	var ids []int64
-	for _, f := range fs {
-		ids = append(ids, f.AssetIDs...)
-	}
-	return s.resolveAssetIDs(ids)
-}
-
-// resolveAssetIDs de-dupes ids and loads their asset rows into an id→asset map.
-func (s *Server) resolveAssetIDs(ids []int64) map[int64]*db.Asset {
-	assets := map[int64]*db.Asset{}
-	seen := map[int64]bool{}
-	var uniq []int64
-	for _, id := range ids {
-		if id > 0 && !seen[id] {
-			seen[id] = true
-			uniq = append(uniq, id)
-		}
-	}
-	if len(uniq) == 0 {
-		return assets
-	}
-	list, err := s.m.pg.Assets().GetByIDs(uniq)
-	if err != nil {
-		log.Printf("[findings] resolve assets: %v", err)
-	}
-	for _, a := range list {
-		assets[a.ID] = a
-	}
-	return assets
-}
-
-// findingStats serves the whole-table aggregates (stat cards + vuln-class filter)
-// for the paginated Findings page.
-func (s *Server) findingStats(w http.ResponseWriter, r *http.Request) {
-	st, err := s.m.pg.FindingStats()
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	writeJSON(w, 200, st)
-}
-
-// getFinding returns one finding by its standalone-table id (DTO finding_id),
-// with anchored assets resolved for display.
-func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
-	id := int64(atoiDefault(r.PathValue("id"), 0))
-	if id <= 0 {
-		writeErr(w, 400, "bad finding id")
-		return
-	}
-	f, err := s.m.pg.GetFinding(id)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	if f == nil {
-		writeErr(w, 404, "finding not found")
-		return
-	}
-	assets := s.resolveAssetIDs(f.AssetIDs)
-	dto := findingFromDB(f, assets)
-	if contextTaskID := strings.TrimSpace(r.URL.Query().Get("context_task")); contextTaskID != "" {
-		contextTask := s.m.ResolveTask(contextTaskID)
-		if contextTask == nil {
-			writeErr(w, 404, "context task not found")
-			return
-		}
-		sourceTaskID, inherited, allowed := findingProvenanceInTask(contextTask, f.TaskID)
-		if !allowed {
-			writeErr(w, 404, "finding not available in task context")
-			return
-		}
-		dto.SourceTaskID = sourceTaskID
-		dto.Inherited = inherited
-	}
-	writeJSON(w, 200, dto)
-}
-
-// findingsExport exports findings from the Findings page.
-//
-// scope = filtered (page filters), all, or selected (checked ids).
-// format = md-single (one combined Markdown) or md-zip (one Markdown per finding).
-//
-//	| csv | json
-//
-// ids = comma-separated finding IDs, required for scope=selected.
-// severity/status/vulnclass/task_id/q/sort match the list API and apply to scope=filtered.
-func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	scope := q.Get("scope")
-	format := q.Get("format")
-
-	var ids []int64
-	var filter db.FindingFilter
-	switch scope {
-	case "selected":
-		for _, part := range strings.Split(q.Get("ids"), ",") {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			id, err := strconv.ParseInt(part, 10, 64)
-			if err != nil || id <= 0 {
-				writeErr(w, 400, "bad finding id: "+part)
-				return
-			}
-			ids = append(ids, id)
-		}
-		if len(ids) == 0 {
-			writeErr(w, 400, "no findings selected")
-			return
-		}
-	case "all":
-		// Empty filter adds no conditions.
-	case "filtered", "":
-		filter = findingFilterFromQuery(q)
-	default:
-		writeErr(w, 400, "bad scope: "+scope)
-		return
-	}
-
-	fs, err := s.m.pg.ListFindingsForExport(filter, ids)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-
-	stage, err := os.MkdirTemp("", "artex-finding-export-")
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	defer os.RemoveAll(stage)
-	if err = s.evidenceStore().StageFindingsExport(r.Context(), fs, stage, format == "md-zip"); err != nil {
-		evidenceError(w, err)
-		return
-	}
-	now := time.Now()
-	stamp := now.Format("20060102-150405")
-	setDownload := func(contentType, filename string) {
-		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	}
-
-	switch format {
-	case "md-single":
-		setDownload("text/markdown; charset=utf-8", "findings-"+stamp+".md")
-		_, _ = w.Write([]byte(report.FindingsMarkdown(fs, now)))
-	case "md-zip":
-		path := filepath.Join(stage, "findings.zip")
-		if err := buildFindingsEvidenceZip(path, fs, stage, now); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		defer file.Close()
-		setDownload("application/zip", "findings-"+stamp+".zip")
-		http.ServeContent(w, r, "findings.zip", now, file)
-	case "csv":
-		setDownload("text/csv; charset=utf-8", "findings-"+stamp+".csv")
-		_, _ = w.Write(report.FindingsCSV(fs))
-	case "json":
-		assets := s.resolveFindingAssets(fs)
-		out := make([]FindingDTO, 0, len(fs))
-		for _, f := range fs {
-			for i := range f.TrafficBindings {
-				f.TrafficBindings[i].Snapshot.ReqHead = ""
-				f.TrafficBindings[i].Snapshot.RespHead = ""
-			}
-			out = append(out, findingFromDB(f, assets))
-		}
-		setDownload("application/json; charset=utf-8", "findings-"+stamp+".json")
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		_ = enc.Encode(out)
-	default:
-		writeErr(w, 400, "bad format: "+format)
-	}
-}
-
-func findingProvenanceInTask(contextTask *Task, findingTaskID *int64) (sourceTaskID string, inherited, allowed bool) {
-	if contextTask == nil || findingTaskID == nil {
-		return "", false, false
-	}
-	contextID, err := strconv.ParseInt(contextTask.ID, 10, 64)
-	if err != nil {
-		return "", false, false
-	}
-	if *findingTaskID == contextID {
-		return "", false, true
-	}
-	for _, sourceID := range contextTask.lifecycleSnapshot().SourceTaskIDs {
-		if sourceID == *findingTaskID {
-			return i64s(sourceID), true, true
-		}
-	}
-	return "", false, false
-}
-
-// findingLineage returns the exploration sub-DAG from the task root to this
-// finding's node — the finding node + all its ancestors + edges among them — so
-// the detail page can show "how this finding was reached". Empty {nodes,edges}
-// when the finding has no node/task (e.g. the originating task was deleted).
-func (s *Server) findingLineage(w http.ResponseWriter, r *http.Request) {
-	id := int64(atoiDefault(r.PathValue("id"), 0))
-	if id <= 0 {
-		writeErr(w, 400, "bad finding id")
-		return
-	}
-	f, err := s.m.pg.GetFinding(id)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	if f == nil {
-		writeErr(w, 404, "finding not found")
-		return
-	}
-	empty := map[string]any{"nodes": []any{}, "edges": []any{}}
-	if f.NodeID == nil || f.TaskID == nil {
-		writeJSON(w, 200, empty)
-		return
-	}
-	t := s.m.ResolveTask(i64s(*f.TaskID))
-	if t == nil {
-		writeJSON(w, 200, empty)
-		return
-	}
-	nodes, edges, err := t.Store.FindingLineage(*f.NodeID)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	writeJSON(w, 200, map[string]any{"nodes": taskNodeDTOs(nodes), "edges": edgeDTOs(edges)})
-}
-
-// patchFinding partially updates a finding: any subset of {status, severity}.
-// The id is the standalone findings-table id (DTO finding_id). Severity edits are
-// mirrored onto the originating exploration node so the per-task view stays in
-// sync. Returns the updated finding DTO.
-func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
-	id := int64(atoiDefault(r.PathValue("id"), 0))
-	if id <= 0 {
-		writeErr(w, 400, "bad finding id")
-		return
-	}
-	var body struct {
-		Status    *string `json:"status"`
-		Severity  *string `json:"severity"`
-		Name      *string `json:"name"`
-		VulnClass *string `json:"vulnclass"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, 400, "bad json: "+err.Error())
-		return
-	}
-	if body.Status == nil && body.Severity == nil && body.Name == nil && body.VulnClass == nil {
-		writeErr(w, 400, "nothing to update: provide status/severity/name/vulnclass")
-		return
-	}
-	if body.Status != nil {
-		if !db.ValidFindingStatus(*body.Status) {
-			writeErr(w, 400, "bad status: "+*body.Status)
-			return
-		}
-		// Use the notification-aware version so state and notification event are persisted in one transaction,
-		// avoiding updated state without an event. Event registration failure must not prevent state updates,
-		// so log only without returning an error.
-		from, found, notified, err := s.m.pg.SetFindingStatusWithNotify(r.Context(), id, *body.Status)
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		if !found {
-			writeErr(w, 404, "finding not found")
-			return
-		}
-		if !notified && from != *body.Status {
-			log.Printf("[notify] Status change event not registered finding=%d %s→%s (status updated)", id, from, *body.Status)
-		}
-	}
-	if body.Severity != nil {
-		if !db.ValidSeverity(*body.Severity) {
-			writeErr(w, 400, "bad severity: "+*body.Severity)
-			return
-		}
-		n, err := s.m.pg.SetFindingSeverity(id, *body.Severity)
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		if n == 0 {
-			writeErr(w, 404, "finding not found")
-			return
-		}
-	}
-	if body.Name != nil {
-		n, err := s.m.pg.SetFindingName(id, strings.TrimSpace(*body.Name))
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		if n == 0 {
-			writeErr(w, 404, "finding not found")
-			return
-		}
-	}
-	if body.VulnClass != nil {
-		n, err := s.m.pg.SetFindingVulnClass(id, strings.TrimSpace(*body.VulnClass))
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		if n == 0 {
-			writeErr(w, 404, "finding not found")
-			return
-		}
-	}
-	f, err := s.m.pg.GetFinding(id)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	if f == nil {
-		writeErr(w, 404, "finding not found")
-		return
-	}
-	writeJSON(w, 200, findingFromDB(f, s.resolveAssetIDs(f.AssetIDs)))
-}
-
-// deleteFinding removes a finding (findings row + originating exploration node).
-// id is the standalone findings-table id (DTO finding_id).
-func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
-	id := int64(atoiDefault(r.PathValue("id"), 0))
-	if id <= 0 {
-		writeErr(w, 400, "bad finding id")
-		return
-	}
-	n, err := s.m.pg.DeleteFinding(id)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	if n == 0 {
-		writeErr(w, 404, "finding not found")
-		return
-	}
-	writeJSON(w, 200, map[string]any{"deleted": true, "id": id})
 }
 
 func (s *Server) intents(w http.ResponseWriter, r *http.Request) {
@@ -2647,8 +2161,8 @@ func (s *Server) explorationNodes(w http.ResponseWriter, r *http.Request) {
 // display-ready asset labels, keyed by node id. Anchors are provenance decoration
 // for the activity board; failure here must not cost the caller its page, so errors are
 // logged and degrade to "no assets".
-func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]FindingAssetDTO {
-	out := map[string][]FindingAssetDTO{}
+func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]AssetRefDTO {
+	out := map[string][]AssetRefDTO{}
 	anchors, err := t.Store.NodeAssets(nodeIDs)
 	if err != nil {
 		log.Printf("[broadcast] node assets: %v", err)
@@ -2658,9 +2172,19 @@ func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]Findi
 	for _, ids := range anchors {
 		flat = append(flat, ids...)
 	}
-	assets := s.resolveAssetIDs(flat)
+	rows, _ := s.m.Assets().GetByIDs(flat)
+	assets := make(map[int64]*db.Asset, len(rows))
+	for _, a := range rows {
+		assets[a.ID] = a
+	}
 	for nodeID, ids := range anchors {
-		if dtos := findingAssetDTOs(ids, assets); len(dtos) > 0 {
+		var dtos []AssetRefDTO
+		for _, aid := range ids {
+			if a := assets[aid]; a != nil {
+				dtos = append(dtos, AssetRefDTO{ID: i64s(a.ID), Type: a.Type, Label: assetLabel(a)})
+			}
+		}
+		if len(dtos) > 0 {
 			out[i64s(nodeID)] = dtos
 		}
 	}
@@ -3872,33 +3396,9 @@ func (s *Server) fallbackChat(t *Task, msg string) string {
 		for _, c := range assetCounts {
 			assets += c
 		}
-		fnd, _ := t.Store.ListByKind(db.KindFinding, 1000)
 		fr, _ := t.Store.Frontier(1000)
-		return fmt.Sprintf("(Rule mode, no LLM configured) Current situation: %d assets, %d unclaimed intents, %d confirmed findings.\nCommands: \"intent ...\" injects an intent; \"hint ...\" gives the planner a hint.", assets, len(fr), len(fnd))
+		return fmt.Sprintf("(Rule mode, no LLM configured) Current situation: %d assets, %d unclaimed intents.\nCommands: \"intent ...\" injects an intent; \"hint ...\" gives the planner a hint.", assets, len(fr))
 	}
-}
-
-func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
-	t := s.m.ResolveTask(r.URL.Query().Get("task"))
-	if t == nil {
-		writeErr(w, 404, "no active task")
-		return
-	}
-	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // Findings only; independent KindFact records do not enter the report.
-	counts := map[string]int{}
-	for _, ty := range []string{"root_domain", "ip", "subdomain", "app", "service", "endpoint"} {
-		ns, _ := s.m.Assets().QueryByType(ty, 100000, 0)
-		if len(ns) > 0 {
-			counts[ty] = len(ns)
-		}
-	}
-	md := report.Markdown(report.Input{
-		Title: t.Description, Goal: t.Goal, GeneratedAt: time.Now(),
-		AssetCounts: counts, Findings: findings,
-	})
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.WriteHeader(200)
-	_, _ = w.Write([]byte(md))
 }
 
 func (s *Server) getAudit(w http.ResponseWriter, r *http.Request) {

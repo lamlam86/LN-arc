@@ -363,11 +363,10 @@ function AssetSheet({
                     {node.asset_id ? <span className="font-mono text-xs">{node.asset_id}</span> : undefined}
                   </DetailRow>
                 </section>
-                {refs && (refs.intents.length > 0 || refs.facts.length > 0 || refs.findings.length > 0) && (
+                {refs && (refs.intents.length > 0 || refs.facts.length > 0) && (
                   <section className="flex flex-col gap-3 border-t pt-3">
                     <RefList title="Linked Intents" items={refs.intents} />
                     <RefList title="Linked Facts" items={refs.facts} />
-                    <RefList title="Linked Findings" items={refs.findings} />
                   </section>
                 )}
                 <section className="border-t pt-3">

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hypnguyen1209/V-ARTEX/agent"
-	"github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
+	"github.com/hypnguyen1209/V-ARTEX/agent"
+	"github.com/hypnguyen1209/V-ARTEX/db"
 )
 
 // jsonResult marshals v to a JSON tool result.
@@ -39,7 +39,6 @@ func jsonResult(v any) (actool.Result, error) {
 //nolint:unused // used as the hostTools provider in wireAgentAugment
 func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	tools := append(s.m.HostTools(), s.orchestrationTools()...)
-	tools = append(tools, s.findingRetestTools()...)
 	tools = append(tools, s.platformTools()...) // Platform operations (create/edit skills, tools, MCP) for Auto.
 	custom, err := s.customTools()
 	if err != nil {
@@ -69,15 +68,11 @@ func (s *Server) orchestrationTools() []actool.CoreTool {
 		s.toolSpawnTask(),
 		s.toolPauseTask(),
 		s.toolGetTaskGraph(),
-		s.toolListTaskFindings(),
 		s.toolAddHint(),
 		s.toolGetWorkerTrace(),
 		s.toolListWorkerTraces(),
 		s.toolSearchWorkerTraces(),
 		s.toolGetTaskNodeDetail(),
-		s.toolUpdateFindingReport(),
-		s.toolGetFindingTraffic(),
-		s.toolBindFindingTraffic(),
 	}
 }
 
@@ -221,7 +216,7 @@ func (s *Server) toolListTasks() actool.CoreTool {
 // orchestration agent can pick one for spawn_task's llm_profile. Never leaks keys.
 func (s *Server) toolListLLMProfiles() actool.CoreTool {
 	return roTool("list_llm_profiles",
-		"List available LLM profiles: id, name, model, format, and active status. Pass id as spawn_task llm_profile_id for a dedicated child-task LLM (for example, a cheaper reconnaissance model or stronger exploitation model). No API keys are included.",
+		"List available LLM profiles: id, name, model, format, and active status. Pass id as spawn_task llm_profile_id for a dedicated child-task LLM (for example, a cheaper passive-recon model or a stronger active-recon model). No API keys are included.",
 		objSchema(map[string]any{}),
 		func(context.Context, json.RawMessage) (actool.Result, error) {
 			profs, err := s.m.pg.ListProfiles()
@@ -348,18 +343,10 @@ func (s *Server) toolPauseTask() actool.CoreTool {
 }
 
 func (s *Server) toolGetTaskGraph() actool.CoreTool {
-	return roTool("get_task_graph", "Read a task exploration graph overview (like graph_overview: asset counts, frontier, findings, coverage) selected by task_id.",
+	return roTool("get_task_graph", "Read a task exploration graph overview (like graph_overview: asset counts, frontier, coverage) selected by task_id.",
 		objSchema(map[string]any{"task_id": strParam("Task id")}, "task_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).GraphOverviewTool)
-		})
-}
-
-func (s *Server) toolListTaskFindings() actool.CoreTool {
-	return roTool("list_task_findings", "Read a task's confirmed findings (including flags/PoCs, with id/task_id/intent_id/vulnclass/severity/summary/status), selected by task_id.",
-		objSchema(map[string]any{"task_id": strParam("Task id")}, "task_id"),
-		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
-			return s.delegateToTask(ctx, in, (*agent.ToolSet).ListFindingsTool)
 		})
 }
 
@@ -367,11 +354,10 @@ func (s *Server) toolAddHint() actool.CoreTool {
 	return wrTool("add_task_hint", "Inject strategic hints into a task for its planner's next intent generation.\n"+
 		"Prefer batches: submit hints together in the hints array (returns equally sized, ordered ids; failed entries have id=0). For one hint, omit hints and set top-level text.",
 		objSchema(map[string]any{
-			"task_id":      strParam("Task id"),
-			"hints":        map[string]any{"type": "array", "description": "Preferred: hint array, each element uses top-level text/asset_ids/traffic_refs fields.", "items": objSchema(map[string]any{"text": strParam("Hint text"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}, "traffic_refs": agent.HintTrafficSchema()})},
-			"text":         strParam("[Single] Hint text"),
-			"traffic_refs": agent.HintTrafficSchema(),
-			"asset_ids":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Optional anchored asset IDs from this task (zero, one, or more)"},
+			"task_id":   strParam("Task id"),
+			"hints":     map[string]any{"type": "array", "description": "Preferred: hint array, each element uses top-level text/asset_ids fields.", "items": objSchema(map[string]any{"text": strParam("Hint text"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}})},
+			"text":      strParam("[Single] Hint text"),
+			"asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Optional anchored asset IDs from this task (zero, one, or more)"},
 		}, "task_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).AddHintTool)
@@ -409,47 +395,13 @@ func (s *Server) toolSearchWorkerTraces() actool.CoreTool {
 
 func (s *Server) toolGetTaskNodeDetail() actool.CoreTool {
 	return roTool("get_task_node_detail",
-		"Read full exploration-node content (finding/fact/intent/goal: summary and details/evidence/PoC). id is an exploration node ID from report_finding or list_task_findings, not an asset ID. Read complete finding evidence before writing its report.",
+		"Read full exploration-node content (fact/intent/goal: summary and details/evidence). id is an exploration node ID from list_facts/graph_overview, not an asset ID.",
 		objSchema(map[string]any{
 			"task_id": strParam("Task id"),
 			"id":      map[string]any{"type": "integer", "description": "Exploration graph node id (not asset id)"},
 		}, "task_id", "id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).NodeDetailTool)
-		})
-}
-
-// toolUpdateFindingReport writes/overwrites a finding's detailed Markdown report.
-// finding_id is the id report_finding returned ("finding recorded: <id>", the
-// finding node id). The write (SetFindingReportByNodeID) is keyed by node_id and
-// task-agnostic, so this host tool needs no task_id / exploration store.
-func (s *Server) toolUpdateFindingReport() actool.CoreTool {
-	return wrTool("update_finding_report",
-		"Write/update a registered finding's full Markdown report, replacing previous content. finding_id is the id returned by report_finding (the number in \"finding recorded: <id>\"). Include overview, impact, reproduction steps, evidence/PoC, and remediation.",
-		objSchema(map[string]any{
-			"finding_id":       map[string]any{"type": "integer", "description": "Finding id returned by report_finding"},
-			"report":           strParam("Full detailed report in Markdown"),
-			"evidence_version": map[string]any{"type": "integer", "description": "Evidence version read from get_finding_traffic, preventing reports from overwriting newer evidence changes"},
-		}, "finding_id", "report"),
-		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
-			var a struct {
-				EvidenceVersion *int64          `json:"evidence_version"`
-				FindingID       json.RawMessage `json:"finding_id"`
-				Report          string          `json:"report"`
-			}
-			_ = json.Unmarshal(in, &a)
-			nodeID := parseProfileID(a.FindingID) // Reuse numeric-or-numeric-string parsing.
-			if nodeID <= 0 {
-				return actool.Errorf("Invalid finding_id"), nil
-			}
-			n, err := s.m.pg.SetFindingReportVersionByNodeID(ctx, nodeID, a.Report, a.EvidenceVersion)
-			if err != nil {
-				return actool.Errorf(err.Error()), nil
-			}
-			if n == 0 {
-				return actool.Errorf(fmt.Sprintf("No finding for finding_id=%d (register it with report_finding first)", nodeID)), nil
-			}
-			return actool.Text(fmt.Sprintf("finding %d report updated (%d chars)", nodeID, len(a.Report))), nil
 		})
 }
 
@@ -476,11 +428,7 @@ func (s *Server) seedOrchestrationTools() {
 	autoAgents, _ := json.Marshal([]string{"auto"})
 	for _, t := range s.orchestrationTools() {
 		schema, _ := json.Marshal(t.InputSchema())
-		bindings := autoAgents
-		if t.Name() == "bind_finding_traffic" {
-			bindings = json.RawMessage(`["reporter"]`)
-		}
-		_ = s.m.PG().SeedTool(t.Name(), t.Description(), schema, bindings)
+		_ = s.m.PG().SeedTool(t.Name(), t.Description(), schema, autoAgents)
 	}
 	for _, t := range s.platformTools() {
 		schema, _ := json.Marshal(t.InputSchema())
@@ -488,24 +436,18 @@ func (s *Server) seedOrchestrationTools() {
 	}
 	s.refreshBuiltinToolSchemas()
 	s.seedAutoDefaultBindings()
-	s.seedPlannerDefaultBindings()
 	s.seedPlannerListAssetsBinding()
 	s.seedCompanyScopeRebind()
 	s.seedWorkerReadToolsUnbind() // One-time default unbinding of list_facts/list_companies/list_worker_traces from worker.
 	s.seedWorkerReadbackRebind()  // Repair earlier migration: rebind search_all_worker_traces/get_worker_trace/node_detail to worker.
-	s.seedAutoReportFindingBinding()
 	s.unbindGoalMetDefault()
-	s.reseedGoalsPrompt()             // One-time goals prompt version adding extraction of operation constraints.
-	s.reseedMainAgentPrompt()         // One-time mainagent prompt addition: ask whether to create goals for post-completion add_intent.
-	s.reseedPlannerPrompt()           // One-time planner prompt rewrite: valid zero-intent cases and quantitative acceptance checks.
-	s.reseedWorkerPrompt()            // One-time worker prompt addition: evidence threshold for negative conclusions.
-	s.seedReporterAgent()             // One-time reporter agent, tool bindings, and finding trigger.
-	s.upgradeReporterTriggerMessage() // One-time existing-database trigger update to return evidence_version.
-	s.seedFindingTrafficTools()       // Add optional evidence parameters/read-only tools while preserving user configuration.
-	s.seedFindingWorkflowTools()
+	s.reseedGoalsPrompt()     // One-time goals prompt version adding extraction of operation constraints.
+	s.reseedMainAgentPrompt() // One-time mainagent prompt addition: ask whether to create goals for post-completion add_intent.
+	s.reseedPlannerPrompt()   // One-time planner prompt rewrite: valid zero-intent cases and quantitative acceptance checks.
+	s.reseedWorkerPrompt()    // One-time worker prompt addition: evidence threshold for negative conclusions.
 	// pentest default tool bindings need no migration: fresh BuiltinToolSeeds inserts
-	// list_assets/insert_assets/report_finding/list_findings/list_companies with
-	// pentest; no older databases existed when this was added.
+	// list_assets/insert_assets/list_companies with pentest; no older databases
+	// existed when this was added.
 }
 
 // refreshBuiltinToolSchemas propagates code schema/description changes on the
@@ -681,132 +623,7 @@ func (s *Server) reseedWorkerPrompt() {
 		log.Printf("[prompts] Failed to reset worker prompt to new default: %v", err)
 		return
 	}
-	log.Printf("[prompts] Appended new worker default prompt version (context limited to list_assets/list_findings, without list_facts/node_detail/asset_neighbors, one-time)")
-}
-
-// reporterToolCallMessage must always require get_finding_traffic before writing a report.
-// This read-only tool works regardless of capture/auto-binding settings and reads manually bound evidence.
-// Conditional reading would omit evidence_version when automatic binding defaults off,
-// causing SetFindingReportVersionByNodeID to write legacy -1 and permanently display
-// evidence changed/report stale in details and exports, with no UI route to clear it.
-const reporterToolCallMessage = "A finding was just registered with report_finding. Read finding_id (standalone finding record ID) and finding_node_id (exploration node ID) from its JSON result. " +
-	"First read get_finding_traffic(finding_id) for the current evidence list and version (an empty list is normal; still write the report). " +
-	"If runtime guidance enables automatic binding, first verify and associate this finding's traffic. Use finding_node_id for node details. " +
-	"Finally save with update_finding_report(finding_id=finding_node_id, report, evidence_version=the version actually read). " +
-	"evidence_version is required or the report will remain marked stale. Do not mix these two ID types."
-
-// Legacy trigger message (0.3.8 and earlier). Only exact defaults are migrated; customized messages survive.
-const reporterToolCallMessageV1 = "\u4e0a\u9762\u521a\u6709\u4e00\u4e2a\u6f0f\u6d1e\u88ab report_finding \u767b\u8bb0。\u8bf7\u4ece\u89e6\u53d1\u4e0a\u4e0b\u6587\u91cc\u53d6\u51fa finding_id" +
-	"（\u5de5\u5177\u8fd4\u56de \"finding recorded: <id>\" \u91cc\u7684\u6570\u5b57）\u4e0e\u4efb\u52a1 id，\u6309\u4f60\u7684\u804c\u8d23\u64b0\u5199\u8be5\u6f0f\u6d1e\u7684\u8be6\u7ec6\u62a5\u544a，" +
-	"\u6700\u540e\u8c03\u7528 update_finding_report(finding_id, report) \u4fdd\u5b58。"
-
-// upgradeReporterTriggerMessage replaces unchanged legacy reporter trigger text.
-// seedReporterAgent is guarded by reporter_agent_seed_v1 and only creates triggers with a new agent,
-// so upgraded databases otherwise miss the instructions to use the evidence_version
-// schema added by seedFindingTrafficTools. One-time and exact-match-only.
-func (s *Server) upgradeReporterTriggerMessage() {
-	const flag = "reporter_trigger_evidence_version_v1"
-	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
-		return
-	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Attempt once.
-	triggers, err := s.m.pg.ListTriggersFor("reporter")
-	if err != nil {
-		log.Printf("[reporter] Failed to read trigger: %v", err)
-		return
-	}
-	for _, t := range triggers {
-		if !t.OnToolCall || t.ToolCallMessage != reporterToolCallMessageV1 {
-			continue // Preserve customized messages and non-finding triggers.
-		}
-		t.ToolCallMessage = reporterToolCallMessage
-		if err := s.m.pg.UpdateTrigger(t); err != nil {
-			log.Printf("[reporter] Failed to upgrade trigger message: %v", err)
-			return
-		}
-		log.Printf("[reporter] Trigger message upgraded to read and return evidence_version")
-	}
-}
-
-// seedReporterAgent creates an editable/deletable custom reporter (builtin=false),
-// binds update_finding_report and task queries, and triggers on report_finding.
-// Each finding starts a detailed report; a settings flag prevents recreating a deleted agent.
-// Orchestration tools were already seeded above, so bindings are available.
-func (s *Server) seedReporterAgent() {
-	const flag = "reporter_agent_seed_v1"
-	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
-		return
-	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Attempt once regardless of success.
-
-	if exist, _ := s.m.pg.GetAgentByKey("reporter"); exist != nil {
-		return // Preserve existing keys, including user-created agents.
-	}
-	a, err := s.m.pg.CreateAgent("reporter", "Report writer",
-		"Write detailed vulnerability reports: automatically triggered by findings, review evidence and execution traces, then write and save a Markdown report.")
-	if err != nil {
-		log.Printf("[reporter] Failed to create agent: %v", err)
-		return
-	}
-	if err := s.m.pg.SeedPromptIfEmpty(a.ID, agent.ReporterDefaultPrompt); err != nil {
-		log.Printf("[reporter] Failed to seed prompt: %v", err)
-	}
-	// Trigger policy: parallel + none, one independent report per finding.
-	// merge must be none; default all would combine findings into one run and defeat parallelism.
-	// maxParallel=5 caps simultaneous report conversations and LLM bursts.
-	if err := s.m.pg.SetAgentTriggerBehavior("reporter", "parallel", "none", 5); err != nil {
-		log.Printf("[reporter] Failed to set trigger execution policy: %v", err)
-	}
-	// Bind report-writing and evidence/trace/situation reading tools.
-	if err := s.m.pg.AddAgentToToolBinding("reporter", []string{
-		"update_finding_report", "get_task_node_detail", "list_task_findings",
-		"get_task_worker_trace", "list_task_worker_traces", "search_task_worker_traces",
-		"get_task_graph",
-	}); err != nil {
-		log.Printf("[reporter] Failed to bind tools: %v", err)
-	}
-	// Trigger on report_finding; its "finding recorded: <id>" result supplies finding_id,
-	// and the task ID also appears in the trigger context.
-	if _, err := s.m.pg.CreateTrigger(&db.AgentTrigger{
-		AgentKey:        "reporter",
-		Enabled:         true,
-		OnToolCall:      true,
-		ToolNames:       []string{"report_finding"},
-		ToolCallMessage: reporterToolCallMessage,
-	}); err != nil {
-		log.Printf("[reporter] Failed to create trigger: %v", err)
-	}
-	log.Printf("[reporter] Seeded reporter agent and finding trigger")
-}
-
-// seedAutoReportFindingBinding adds "auto" to report_finding's binding ONCE so
-// conversation-context agents can call it without requiring an intent_id.
-func (s *Server) seedAutoReportFindingBinding() {
-	const flag = "auto_report_finding_v1"
-	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
-		return
-	}
-	if err := s.m.pg.AddAgentToToolBinding("auto", []string{"report_finding"}); err != nil {
-		log.Printf("[auto] Failed to bind report_finding by default: %v", err)
-		return
-	}
-	_ = s.m.pg.SetSetting(flag, "true")
-}
-
-// seedPlannerDefaultBindings adds "planner" to report_finding's binding ONCE
-// (guarded by a settings flag), so existing DBs — whose report_finding row was
-// seeded as worker-only — also let the planner record findings. Fresh DBs already
-// get it via PlannerTools(); this only backfills without overriding a user unbind.
-func (s *Server) seedPlannerDefaultBindings() {
-	const flag = "planner_report_finding_v1"
-	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
-		return
-	}
-	if err := s.m.pg.AddAgentToToolBinding("planner", []string{"report_finding"}); err != nil {
-		log.Printf("[planner] Failed to bind report_finding by default: %v", err)
-		return
-	}
-	_ = s.m.pg.SetSetting(flag, "true")
+	log.Printf("[prompts] Appended new worker default prompt version (context limited to list_assets, without list_facts/node_detail, one-time)")
 }
 
 // seedPlannerListAssetsBinding adds "planner" to list_assets's binding ONCE

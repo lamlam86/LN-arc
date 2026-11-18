@@ -61,3 +61,13 @@ Thumbs.db
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2
+
+# Local ARTeX backups (may contain credentials)
+backups/
+
+# Local recon reports and generated report bundle (may contain target data)
+/reports/*.md
+!/reports/README.md
+*.log
+/start.bat.bak
+/start.bat.new

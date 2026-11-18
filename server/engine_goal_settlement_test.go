@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hypnguyen1209/V-ARTEX/agent"
-	"github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/agent"
+	"github.com/hypnguyen1209/V-ARTEX/db"
 )
 
 func TestSettlementKindsRemainDistinct(t *testing.T) {
@@ -688,7 +688,7 @@ func TestGoalSettlementDrainAlreadyComplete(t *testing.T) {
 }
 
 func TestGoalSettlementHookBlocksProbesAndAllowsWriteback(t *testing.T) {
-	for _, tool := range []string{"insert_assets", "record_fact", "report_finding"} {
+	for _, tool := range []string{"insert_assets", "record_fact"} {
 		h := steerHooks{goalSettling: func() bool { return true }, goalSettlePrompted: &atomic.Bool{}}
 		blocked, _, _ := h.PreToolUse(context.Background(), tool, nil)
 		if blocked {

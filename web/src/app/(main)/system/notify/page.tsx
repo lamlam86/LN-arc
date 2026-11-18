@@ -317,7 +317,7 @@ export default function NotifyPage() {
             <Label htmlFor="n-base">Application URL</Label>
             <Input
               id="n-base"
-              placeholder="https://artex.example.com"
+              placeholder="https://ln-arc.example.com"
               value={baseURL}
               onChange={(e) => setBaseURL(e.target.value)}
             />

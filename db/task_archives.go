@@ -525,15 +525,32 @@ func rawRowCount(raw json.RawMessage) int64 {
 	return int64(len(rows))
 }
 
-func archiveAssetIDsQuery() string {
-	return `SELECT id FROM assets WHERE $1=ANY(task_ids)
+// tableExists reports whether a relation is visible on the current search path.
+// Recon-only installations no longer create the historical findings tables, so
+// queries that used to reference them must be built conditionally.
+func tableExists(q interface {
+	QueryRow(query string, args ...any) *sql.Row
+}, name string) (bool, error) {
+	var exists bool
+	if err := q.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, name).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func archiveAssetIDsQuery(hasFindings bool) string {
+	query := `SELECT id FROM assets WHERE $1=ANY(task_ids)
 UNION SELECT link.asset_id FROM task_asset_links link WHERE link.task_id=$1
 UNION SELECT anchor.asset_id FROM exploration_anchors anchor
-      JOIN exploration_nodes node ON node.id=anchor.node_id WHERE node.exploration_id=$2
+      JOIN exploration_nodes node ON node.id=anchor.node_id WHERE node.exploration_id=$2`
+	if hasFindings {
+		query += `
 UNION SELECT value::bigint FROM findings finding
       CROSS JOIN LATERAL jsonb_array_elements_text(
         CASE WHEN jsonb_typeof(finding.asset_ids)='array' THEN finding.asset_ids ELSE '[]'::jsonb END
       ) value WHERE finding.task_id=$1 AND value ~ '^[0-9]+$'`
+	}
+	return query
 }
 
 // SnapshotTaskArchive reads one repeatable PostgreSQL snapshot. Task-owned Agent
@@ -569,6 +586,10 @@ func (d *DB) snapshotTaskArchive(taskID int64, llmRecords io.Writer) (*TaskArchi
 		}
 		return nil, err
 	}
+	hasFindings, err := tableExists(tx, "findings")
+	if err != nil {
+		return nil, err
+	}
 	tables := make(map[string]json.RawMessage)
 	queries := []struct {
 		name  string
@@ -586,9 +607,6 @@ func (d *DB) snapshotTaskArchive(taskID int64, llmRecords io.Writer) (*TaskArchi
 		{"task_asset_links", `SELECT * FROM task_asset_links WHERE task_id=$1 ORDER BY asset_id`, []any{taskID}},
 		{"task_llm_profiles", `SELECT * FROM task_llm_profiles WHERE task_id=$1 ORDER BY position`, []any{taskID}},
 		{"task_scope", `SELECT * FROM task_scope WHERE task_id=$1 ORDER BY id`, []any{taskID}},
-		{"findings", `SELECT * FROM findings WHERE task_id=$1 ORDER BY id`, []any{taskID}},
-		{"finding_traffic_bindings", `SELECT b.* FROM finding_traffic_bindings b JOIN findings f ON f.id=b.finding_id WHERE f.task_id=$1 ORDER BY b.finding_id,b.position,b.id`, []any{taskID}},
-		{"traffic_evidence_snapshots", `SELECT s.* FROM traffic_evidence_snapshots s WHERE EXISTS(SELECT 1 FROM finding_traffic_bindings b JOIN findings f ON f.id=b.finding_id WHERE b.snapshot_id=s.id AND f.task_id=$1) ORDER BY s.id`, []any{taskID}},
 		{"llm_records", `SELECT * FROM llm_records WHERE COALESCE(task_id,'')=$1 ORDER BY id`, []any{strconv.FormatInt(taskID, 10)}},
 		{"llm_usage", `SELECT * FROM llm_usage WHERE COALESCE(task_id,'')=$1 OR exploration_id=$2 ORDER BY id`, []any{strconv.FormatInt(taskID, 10), expID}},
 		{"skill_usage", `SELECT * FROM skill_usage WHERE task_id=$1 OR exploration_id=$2 ORDER BY id`, []any{taskID, expID}},
@@ -596,7 +614,7 @@ func (d *DB) snapshotTaskArchive(taskID int64, llmRecords io.Writer) (*TaskArchi
 		{"intercept_pending", `SELECT * FROM intercept_pending WHERE COALESCE(task_id,'')=$1 ORDER BY id`, []any{strconv.FormatInt(taskID, 10)}},
 		{"side_question_sessions", `SELECT * FROM side_question_sessions WHERE task_id=$1 ORDER BY session_key`, []any{taskID}},
 		{"side_question_requests", `SELECT r.* FROM side_question_requests r JOIN side_question_sessions s ON s.session_key=r.session_key WHERE s.task_id=$1 ORDER BY r.ordinal`, []any{taskID}},
-		{"assets", `SELECT asset.* FROM assets asset WHERE asset.id IN (` + archiveAssetIDsQuery() + `) ORDER BY asset.id`, []any{taskID, expID}},
+		{"assets", `SELECT asset.* FROM assets asset WHERE asset.id IN (` + archiveAssetIDsQuery(hasFindings) + `) ORDER BY asset.id`, []any{taskID, expID}},
 	}
 	counts := make(map[string]int64, len(queries))
 	streamedTables := map[string]string{}
@@ -679,7 +697,11 @@ func archiveAssetMetadata(tx *sql.Tx, taskID, expID int64, assetRows json.RawMes
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	rowsID, err := tx.Query(`WITH candidate AS (`+archiveAssetIDsQuery()+`)
+	hasFindings, err := tableExists(tx, "findings")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	rowsID, err := tx.Query(`WITH candidate AS (`+archiveAssetIDsQuery(hasFindings)+`)
 SELECT asset.id FROM assets asset JOIN candidate ON candidate.id=asset.id
 WHERE asset.company_id IS NULL
 AND NOT EXISTS (SELECT 1 FROM tasks task WHERE task.id<>$1 AND task.deleted_at IS NULL AND task.id=ANY(asset.task_ids))
@@ -721,6 +743,10 @@ FROM llm_usage WHERE COALESCE(task_id,'')=$1 OR exploration_id=$2`, strconv.Form
 		return nil, err
 	}
 	stats["tokens"] = map[string]int64{"calls": calls, "input_tokens": input, "output_tokens": output, "cache_read_tokens": cacheRead, "cache_write_tokens": cacheWrite}
+	hasFindings, err := tableExists(tx, "findings")
+	if err != nil {
+		return nil, err
+	}
 	for _, item := range []struct {
 		name  string
 		query string
@@ -758,6 +784,9 @@ FROM skill_usage WHERE (task_id=$1 OR exploration_id=$2) AND NOT found GROUP BY 
  'vulnclasses',COALESCE(jsonb_agg(DISTINCT vulnclass) FILTER (WHERE vulnclass<>''),'[]'::jsonb))
 FROM findings WHERE task_id=$1`, []any{taskID}},
 	} {
+		if !hasFindings && (item.name == "findings" || item.name == "finding_stats") {
+			continue
+		}
 		var raw []byte
 		if err := tx.QueryRow(item.query, item.args...).Scan(&raw); err != nil {
 			return nil, err

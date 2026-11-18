@@ -118,7 +118,7 @@ export const CHANNEL_FIELDS: Record<string, FieldDef[]> = {
     },
     { key: "username", label: "Username", kind: "text" },
     { key: "password", label: "Password / app password", kind: "password" },
-    { key: "from", label: "Sender", kind: "text", placeholder: "artex@example.com" },
+    { key: "from", label: "Sender", kind: "text", placeholder: "ln-arc@example.com" },
     { key: "to", label: "Recipients", kind: "list", help: "Separate multiple addresses with commas" },
     {
       key: "tls",

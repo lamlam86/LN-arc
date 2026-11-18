@@ -18,7 +18,6 @@ import {
 import { toast } from "sonner";
 
 import { HttpCodeBlock } from "@/components/http-code-block";
-import { LinkTrafficDialog } from "@/components/link-traffic-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -113,7 +112,6 @@ const STATUS_BUCKETS = ["2xx", "3xx", "4xx", "5xx"];
 
 export default function TrafficPage() {
   const [selectedFlows, setSelectedFlows] = React.useState<Set<string>>(() => new Set());
-  const [linking, setLinking] = React.useState(false);
   const [page, setPage] = React.useState(0);
   const [size, setSize] = React.useState(50);
   const [host, setHost] = React.useState(""); // raw host input
@@ -606,9 +604,6 @@ export default function TrafficPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">{selectedFlows.size} traffic records selected</span>
-        <Button variant="outline" size="sm" disabled={selectedFlows.size === 0} onClick={() => setLinking(true)}>
-          Link to Finding
-        </Button>
         {selectedFlows.size > 0 ? (
           <Button variant="ghost" size="sm" onClick={() => setSelectedFlows(new Set())}>
             Clear selection
@@ -721,13 +716,6 @@ export default function TrafficPage() {
         </Card>
       </div>
 
-      {linking ? (
-        <LinkTrafficDialog
-          trafficIds={[...selectedFlows]}
-          onClose={() => setLinking(false)}
-          onBound={() => setSelectedFlows(new Set())}
-        />
-      ) : null}
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full! max-w-none! gap-0 p-0 sm:w-[48rem]! sm:max-w-[48rem]!">
           {selected && (
@@ -788,8 +776,7 @@ export default function TrafficPage() {
                 <>
                   Permanently delete all <span className="font-semibold tabular-nums">{traffic?.count ?? 0}</span>{" "}
                   traffic records, including raw requests and responses, regardless of the current filters. This action
-                  cannot be undone. Traffic evidence linked to findings is kept in a separate evidence store and is
-                  unaffected.
+                  cannot be undone. Traffic evidence is stored independently and is unaffected.
                   <br />
                   <span className="text-muted-foreground">
                     Clearing also compacts storage to reclaim disk space used by indexes. Traffic recording pauses

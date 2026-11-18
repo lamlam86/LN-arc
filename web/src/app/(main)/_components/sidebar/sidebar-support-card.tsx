@@ -1,27 +1,17 @@
-import Link from "next/link";
+import { GraduationCap } from "lucide-react";
 
-import { siX } from "simple-icons";
-
-import { SimpleIcon } from "@/components/simple-icon";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function SidebarSupportCard() {
   return (
-    <Card size="sm" className="overflow-hidden shadow-none group-data-[collapsible=icon]:hidden">
+    <Card size="sm" className="overflow-hidden border-primary/20 bg-primary/5 shadow-none group-data-[collapsible=icon]:hidden">
       <CardHeader className="min-w-0 px-4">
-        <CardTitle className="truncate text-sm">Looking for something more?</CardTitle>
-        <CardDescription className="line-clamp-2">
-          Open an issue or do reach out to me on&nbsp;
-          <Link
-            href="https://x.com/arhamkhnz"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Reach out on X"
-            className="inline-flex items-center text-foreground"
-          >
-            <SimpleIcon icon={siX} aria-hidden className="size-3 fill-current" />
-          </Link>
-          .
+        <CardTitle className="flex items-center gap-1.5 truncate text-sm">
+          <GraduationCap className="size-4 text-primary" />
+          Graduation Project
+        </CardTitle>
+        <CardDescription className="line-clamp-3 text-[11px]">
+          LN-ARC: Autonomous AI Reconnaissance Console — LLM-driven multi-agent system for network reconnaissance.
         </CardDescription>
       </CardHeader>
     </Card>

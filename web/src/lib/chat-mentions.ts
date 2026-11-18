@@ -1,5 +1,4 @@
 export const mentionKinds = [
-  { kind: "finding", label: "Finding", alias: "finding" },
   { kind: "asset", label: "Asset", alias: "asset" },
   { kind: "company", label: "Company", alias: "company" },
   { kind: "endpoint", label: "Endpoint", alias: "api" },
@@ -14,7 +13,6 @@ export type MentionKind = (typeof mentionKinds)[number]["kind"];
 
 // Keep previously entered aliases and saved mention tokens readable.
 const legacyMentionLabels: Record<MentionKind, string> = {
-  finding: "\u6f0f\u6d1e",
   asset: "\u8d44\u4ea7",
   company: "\u4f01\u4e1a",
   endpoint: "\u63a5\u53e3",
@@ -70,7 +68,7 @@ export function mentionToken(item: ChatMention) {
 export function selectedMentions(value: string) {
   return [
     ...value.matchAll(
-      /@\[(Finding|Asset|Company|Endpoint|IP|App|Domain|Subdomain|Service|\u6f0f\u6d1e|\u8d44\u4ea7|\u4f01\u4e1a|\u63a5\u53e3|\u5e94\u7528|\u57df\u540d|\u5b50\u57df\u540d|\u670d\u52a1)#([0-9]+)(?: ([^\]\r\n]*))?\]/g,
+      /@\[(Asset|Company|Endpoint|IP|App|Domain|Subdomain|Service|\u8d44\u4ea7|\u4f01\u4e1a|\u63a5\u53e3|\u5e94\u7528|\u57df\u540d|\u5b50\u57df\u540d|\u670d\u52a1)#([0-9]+)(?: ([^\]\r\n]*))?\]/g,
     ),
   ].map((match) => ({
     token: match[0],

@@ -9,6 +9,7 @@
 # Run artex and decide whether to restart it based on its exit code.
 #
 #   0      Normal user stop       → Exit the loop
+#   2      Permanent failure      → Exit the loop (e.g. the listen port is already in use)
 #   75     Restart requested      → Restart immediately (after "One-click Update" or "Rollback" in the UI)
 #   Other  Crash                  → Restart with backoff (1→2→4… up to 60 seconds)
 #
@@ -19,6 +20,15 @@
 set -u
 
 cd "$(dirname "$0")" || exit 1
+
+# Load .env (same as run.sh) so credentials such as OPENAI_API_KEY are available.
+# The Go binary itself does not read .env.
+if [ -f .env ]; then
+	set -a
+	# shellcheck disable=SC1091
+	. ./.env
+	set +a
+fi
 
 BIN=./artex
 [ -x "$BIN" ] || { echo "[artex] Executable not found: $BIN" >&2; exit 1; }
@@ -66,6 +76,12 @@ while :; do
 		0)
 			echo "[artex] Exited normally"
 			exit 0
+			;;
+		2)
+			# Permanent startup failure (for example the listen port is already in
+			# use). Retrying cannot fix it and only repeats the error every backoff tick.
+			echo "[artex] Startup failed permanently; not restarting" >&2
+			exit 2
 			;;
 		"$RESTART_CODE")
 			# Update/rollback is ready: artex replaces the binary at the next startup (see selfupdate.Bootstrap).

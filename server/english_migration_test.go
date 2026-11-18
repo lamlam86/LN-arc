@@ -15,7 +15,7 @@ func TestEnglishMigrationUsesCurrentEnglishDefaults(t *testing.T) {
 		values map[string]string
 		count  int
 	}{
-		{"prompts", defaults.PromptBySHA256, 9},
+		{"prompts", defaults.PromptBySHA256, 7},
 		{"wrapups", defaults.WrapupBySHA256, 4},
 		{"task-timeouts", defaults.TaskTimeoutBySHA256, 2},
 		{"judge", defaults.JudgeBySHA256, 1},

@@ -127,10 +127,6 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Fatal(err)
 	}
 	nid, _ := strconv.ParseInt(id, 10, 64)
-	findingID, err := m.pg.AddFinding(nid, 0, "__core_task_delete__", "", db.SeverityHigh, "summary", "evidence", "tester", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := m.pg.EnsureLLMRecordsTable(); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +137,6 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	// barrier, workspace, in-memory registry and DB delete.
 	code, out = doRetry("DELETE", "/api/tasks/000"+id, map[string]bool{
 		"delete_files":       true,
-		"delete_findings":    true,
 		"delete_llm_records": true,
 	})
 	if code != 200 {
@@ -149,9 +144,6 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	}
 	if deleted, _ := out["files_deleted"].(bool); !deleted {
 		t.Fatalf("expected files_deleted response, got %v", out)
-	}
-	if deleted, _ := out["findings_deleted"].(float64); deleted != 1 {
-		t.Fatalf("expected one deleted finding, got %v", out)
 	}
 	if deleted, _ := out["llm_records_deleted"].(float64); deleted != 1 {
 		t.Fatalf("expected one deleted LLM record, got %v", out)
@@ -166,9 +158,6 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	}
 	if got, _ := m.pg.GetTask(nid); got != nil {
 		t.Fatalf("task should be deleted from PG")
-	}
-	if finding, err := m.pg.GetFinding(findingID); err != nil || finding != nil {
-		t.Fatalf("finding should be deleted, got finding=%+v err=%v", finding, err)
 	}
 	var llmRecords int
 	if err := m.pg.QueryRow(`SELECT count(*) FROM llm_records WHERE task_id=$1`, id).Scan(&llmRecords); err != nil || llmRecords != 0 {

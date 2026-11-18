@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hypnguyen1209/V-ARTEX/db"
 	acperm "github.com/Autumn-27/norma/permission"
 	actool "github.com/Autumn-27/norma/tool"
+	"github.com/hypnguyen1209/V-ARTEX/db"
 )
 
 // compactIntents distills intents to {id, summary, state, asset_ids, parents,
@@ -51,12 +51,11 @@ func compactIntents(ns []*db.Node, parentsOf, yieldsOf map[int64][]int64) []map[
 // ToolSet exposes the PG-backed dual graph (asset + exploration) to an LLM agent.
 // One ToolSet is created per planner/worker run; per-run signals live here.
 type ToolSet struct {
-	findingRecorder FindingRecorder
-	as              *db.AssetStore   // asset store (optional; nil = asset tools not available)
-	cs              *db.CompanyStore // company store (optional)
-	ts              *db.ExplorationStore
-	worker          string
-	taskID          int64 // PG tasks.id; 0 when unknown (tests / orchestrator cross-task reads)
+	as     *db.AssetStore   // asset store (optional; nil = asset tools not available)
+	cs     *db.CompanyStore // company store (optional)
+	ts     *db.ExplorationStore
+	worker string
+	taskID int64 // PG tasks.id; 0 when unknown (tests / orchestrator cross-task reads)
 	// coverageDisabled mirrors tasks.coverage_enabled=false. Stored inverted so the
 	// zero value (all existing ToolSet constructions) means ENABLED — matching the
 	// DB default (true). When true: graphOverviewData drops the coverage block, the
@@ -84,10 +83,6 @@ type ToolSet struct {
 	// re-planned promptly (currently: a new hint). nil = no wake (the hint is still
 	// stored and read on the next round triggered by other events). debounced.
 	notify func()
-	// notifyFinding, if set, wakes the task's planner when this run reports a finding,
-	// carrying (intentID, summary) so the round can spell out which intent found what.
-	// Wired for workers; nil elsewhere → falls back to notify (bare wake).
-	notifyFinding func(intentID int64, summary string)
 	// resumeTask, if set, revives the task after a graph change that should make a
 	// stopped task run again (currently: set_goals adds a goal). It flips a terminal/
 	// paused task back to running and (re)starts the engine loops — a plain notify()
@@ -126,9 +121,6 @@ func (t *ToolSet) SetResumeTask(fn func()) { t.resumeTask = fn }
 // that hold the task handle (main-agent chat, cross-task orchestration).
 func (t *ToolSet) SetNotify(fn func()) { t.notify = fn }
 
-// SetNotifyFinding wires the finding-wake callback (see ToolSet.notifyFinding).
-func (t *ToolSet) SetNotifyFinding(fn func(int64, string)) { t.notifyFinding = fn }
-
 // EnrichTrigger is the enrichment engine seen from the tool layer (see package
 // enrich). Kept as an interface here to avoid coupling agent → enrich.
 type EnrichTrigger interface {
@@ -137,22 +129,20 @@ type EnrichTrigger interface {
 }
 
 // WriteCounts breaks down what a worker persisted this run, by node kind, so the
-// engine can log an accurate "wrote back" summary instead of lumping assets and
-// findings under "facts" (record_fact → Facts, insert_assets → Assets,
-// report_finding → Findings; each element of a batch counts once).
+// engine can log an accurate "wrote back" summary (record_fact → Facts,
+// insert_assets → Assets; each element of a batch counts once).
 type WriteCounts struct {
-	Facts    int
-	Assets   int
-	Findings int
+	Facts  int
+	Assets int
 }
 
 // Total is every node persisted this run, regardless of kind — the
 // "explored but persisted nothing" signal (Total == 0).
-func (w WriteCounts) Total() int { return w.Facts + w.Assets + w.Findings }
+func (w WriteCounts) Total() int { return w.Facts + w.Assets }
 
 // String renders the per-kind breakdown for logs, e.g. "facts 1 assets 25 findings 0".
 func (w WriteCounts) String() string {
-	return fmt.Sprintf("facts %d assets %d findings %d", w.Facts, w.Assets, w.Findings)
+	return fmt.Sprintf("facts %d assets %d", w.Facts, w.Assets)
 }
 
 // Writes reports what this run wrote back, split by node kind (so the engine can
@@ -164,8 +154,7 @@ func NewToolSet(ts *db.ExplorationStore, worker string) *ToolSet {
 	return &ToolSet{ts: ts, worker: worker}
 }
 
-// SetTaskID sets the PG task id on this ToolSet so that report_finding can
-// dual-write to the standalone findings table (which survives task deletion).
+// SetTaskID sets the PG task id on this ToolSet for task-scoped queries.
 func (t *ToolSet) SetTaskID(id int64) { t.taskID = id }
 
 // SetCoverageEnabled records whether this task has the asset-coverage feature on
@@ -210,7 +199,6 @@ func (t *ToolSet) DropCoverageTools(tools []actool.CoreTool) []actool.CoreTool {
 // same logic as the in-task tools. (readTool ignores ToolContext, so Call(…,nil)
 // is safe; add_hint is a writeTool but also doesn't deref the context here.)
 func (t *ToolSet) GraphOverviewTool() actool.CoreTool      { return t.graphOverview() }
-func (t *ToolSet) ListFindingsTool() actool.CoreTool       { return t.listFindings() }
 func (t *ToolSet) GetWorkerTraceTool() actool.CoreTool     { return t.getWorkerTrace() }
 func (t *ToolSet) ListWorkerTracesTool() actool.CoreTool   { return t.listWorkerTraces() }
 func (t *ToolSet) SearchWorkerTracesTool() actool.CoreTool { return t.searchAllWorkerTraces() }
@@ -316,7 +304,7 @@ func (t *ToolSet) writeExpTool(name, desc string, schema map[string]any, run fun
 }
 
 // needExploration wraps a handler so it only runs with an exploration store.
-// Tools that degrade more usefully than "unavailable" (report_finding points at
+// Tools that degrade more usefully than "unavailable" (task tools point at
 // add_task_hint, set_goals/set_constraints at the task itself) keep their own
 // bespoke guard instead.
 func (t *ToolSet) needExploration(name string, run func(context.Context, json.RawMessage) (actool.Result, error)) func(context.Context, json.RawMessage) (actool.Result, error) {
@@ -369,11 +357,7 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 	for _, h := range hints {
 		var p map[string]any
 		_ = json.Unmarshal(h.Payload, &p)
-		hint := map[string]any{"id": h.ID, "state": h.State, "text": p["text"]}
-		if findingTrafficBindingEnabled() && p["traffic_refs"] != nil {
-			hint["traffic_refs"] = p["traffic_refs"]
-		}
-		hsum = append(hsum, hint)
+		hsum = append(hsum, map[string]any{"id": h.ID, "state": h.State, "text": p["text"]})
 	}
 	out["hints"] = hsum
 	// lineage from the exploration edges: an intent's parents (what it
@@ -437,33 +421,10 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 	} else {
 		out["frontier_open"] = len(fr)
 	}
-	// findings (confirmed vulns) and facts (worker exploration results) are
-	// now distinct node kinds. recent_facts surfaces fact summaries (esp.
-	// negative results) so the planner sees them in one call; full content
-	// via node_detail(id).
-	vulnNodes, _ := t.ts.ListByKind(db.KindFinding, 1000)
+	// Exploration facts/conclusions (including negative results) are surfaced in
+	// one call; full content is available via node_detail(id).
 	factNodes, _ := t.ts.ListByKind(db.KindFact, 1000) // newest first
-	out["findings_total"] = len(vulnNodes)             // Total confirmed findings for goal assessment; finding_list contains the latest window.
 	out["facts"] = len(factNodes)                      // Exploration facts/conclusions, including negative conclusions.
-	// Findings are the task's most valuable outputs. Include the latest window (at most 10, newest first),
-	// so the planner sees recently confirmed vulnerabilities when assessing goals; list_findings retrieves older/all entries.
-	// Keep only {id, summary, from_intent?}; from_intent identifies the intent that produced the finding.
-	// Use list_findings / node_detail(id) for evidence/assets/vulnclass/severity/state and other details.
-	const findingListCap = 10
-	findingList := make([]map[string]any, 0, findingListCap)
-	for _, n := range vulnNodes {
-		if len(findingList) >= findingListCap {
-			break
-		}
-		var fp map[string]any
-		_ = json.Unmarshal(n.Payload, &fp)
-		m := map[string]any{"id": n.ID, "summary": fp["summary"]}
-		if from := factFrom[n.ID]; from > 0 {
-			m["from_intent"] = from // Intent that produced this finding.
-		}
-		findingList = append(findingList, m)
-	}
-	out["finding_list"] = findingList
 	// recent_facts is the latest window of unfolded facts (at most N, newest first). Facts still cold
 	// and covered by a digest appear only in cold_digests. Each entry has {id, summary, from_intent?,
 	// confidence?}; node_detail(id) provides evidence/details, and list_facts retrieves older entries.
@@ -563,7 +524,6 @@ const (
 	relatedOverviewMaxGoalsPerSource   = 8
 	relatedOverviewMaxHintsPerSource   = 6
 	relatedOverviewMaxFactsPerSource   = 12
-	relatedOverviewMaxFindingsPerTask  = 6
 	relatedOverviewMaxIntentsPerTask   = 8
 	relatedOverviewMaxScopePerSource   = 12
 	relatedOverviewMaxDigestsPerSource = 6
@@ -722,29 +682,19 @@ func (t *ToolSet) relatedTaskOverviews() []map[string]any {
 		item["hints"] = hintSummary
 
 		facts, _ := ts.ListByKind(db.KindFact, relatedOverviewMaxFactsPerSource)
-		findings, _ := ts.ListByKind(db.KindFinding, relatedOverviewMaxFindingsPerTask)
 		intentNodes, _ := ts.ListByKind(db.KindIntent, 300)
 		terminalIntent := make(map[int64]bool, len(intentNodes))
 		for _, intent := range intentNodes {
 			terminalIntent[intent.ID] = inheritedIntentSummaryState(intent.State)
 		}
 		item["facts"] = len(facts)
-		item["findings"] = len(findings)
 		if statsErr == nil {
 			item["facts"] = stats[db.KindFact]
-			item["findings"] = stats[db.KindFinding]
 			if stats[db.KindGoal] > len(goals) || stats[db.KindHint] > len(hints) ||
-				stats[db.KindFact] > len(facts) || stats[db.KindFinding] > len(findings) {
+				stats[db.KindFact] > len(facts) {
 				budget.truncated = true
 			}
 		}
-		recentFindings := make([]map[string]any, 0, len(findings))
-		for _, finding := range findings {
-			entry := inheritedMap(compactFinding(finding), source.Task.TaskID)
-			entry["summary"] = budget.take(entry["summary"], 400)
-			recentFindings = append(recentFindings, entry)
-		}
-		item["recent_findings"] = recentFindings
 		recentFacts := make([]map[string]any, 0, len(facts))
 		for _, fact := range facts {
 			if hidden(fact.ID) {
@@ -881,63 +831,13 @@ func compactNode(n *db.Node) map[string]any {
 	return m
 }
 
-// compactFinding is compactNode plus the vuln-specific vulnclass/severity.
-func compactFinding(n *db.Node) map[string]any {
-	var p map[string]any
-	_ = json.Unmarshal(n.Payload, &p)
-	m := map[string]any{"id": n.ID, "state": n.State, "summary": p["summary"]}
-	if n.Inherited {
-		inheritedMap(m, n.SourceTaskID)
-	}
-	if vc, ok := p["vulnclass"]; ok && vc != nil && vc != "" {
-		m["vulnclass"] = vc
-	}
-	if sv, ok := p["severity"]; ok && sv != nil && sv != "" {
-		m["severity"] = sv
-	}
-	return m
-}
-
-func (t *ToolSet) listFindings() actool.CoreTool {
-	return t.readExpTool("list_findings", "List confirmed findings in this task and directly related tasks (compact: id+task_id+intent_id+vulnclass+severity+summary+state). Related-task entries include source_task_id/inherited=true and are read-only. Ordinary exploration facts use list_facts; use node_detail(id) for details.",
-		obj(map[string]any{}),
-		func(context.Context, json.RawMessage) (actool.Result, error) {
-			f, _ := t.ts.ListByKindWithSources(db.KindFinding, 500)
-			if err := t.ts.PopulateFindingTrafficIDs(f); err != nil {
-				return actool.Errorf(err.Error()), nil
-			}
-			intentOf, _ := t.ts.FindingIntentsWithSources() // finding id -> intent id that produced it.
-			taskID := t.taskID
-			if taskID <= 0 {
-				taskID, _ = t.ts.TaskID()
-			}
-			out := make([]map[string]any, 0, len(f))
-			for _, n := range f {
-				m := compactFinding(n)
-				if n.FindingID > 0 {
-					m["finding_id"], m["finding_node_id"], m["traffic_count"] = n.FindingID, n.ID, n.TrafficCount
-				}
-				if n.Inherited {
-					m["task_id"] = n.SourceTaskID
-				} else {
-					m["task_id"] = taskID
-				}
-				if iid, ok := intentOf[n.ID]; ok {
-					m["intent_id"] = iid
-				}
-				out = append(out, m)
-			}
-			return jsonResult(out)
-		})
-}
-
 // factsPageSize is the default page size for list_facts. Facts pile up on long
 // tasks; returning all of them at once (the old behaviour) could blow up the
 // context, so default to the newest page and let the agent page/filter for more.
 const factsPageSize = 20
 
 func (t *ToolSet) listFacts() actool.CoreTool {
-	return t.readExpTool("list_facts", "List exploration facts/conclusions in this task and directly related tasks, newest first (compact: id+summary+state; long summaries are truncated, full text in node_detail(id)). All parameters are optional: limit (default 20, max 100), before (cursor; pass the previous page's next_before for older entries; omitted/0 gives the latest page), q (summary keyword filter). Returns {facts, total, has_more, next_before}: total is the filtered count; use next_before while has_more=true. Related-task entries include source_task_id/inherited=true and are read-only. Use list_findings for vulnerabilities.",
+	return t.readExpTool("list_facts", "List exploration facts/conclusions in this task and directly related tasks, newest first (compact: id+summary+state; long summaries are truncated, full text in node_detail(id)). All parameters are optional: limit (default 20, max 100), before (cursor; pass the previous page's next_before for older entries; omitted/0 gives the latest page), q (summary keyword filter). Returns {facts, total, has_more, next_before}: total is the filtered count; use next_before while has_more=true. Related-task entries include source_task_id/inherited=true and are read-only. Use node_detail(id) for full evidence.",
 		obj(map[string]any{
 			"limit":  intp("Number of entries, default 20, maximum 100"),
 			"before": intp("Pagination cursor: return older facts with id below this value; omitted or 0 gives the latest page"),
@@ -990,7 +890,7 @@ func compactFact(n *db.Node) map[string]any {
 }
 
 func (t *ToolSet) nodeDetail() actool.CoreTool {
-	return t.readExpTool("node_detail", "Retrieve full exploration-node content by id from this task or a directly related task. Inherited nodes include source_task_id/inherited=true and are read-only. Only accepts exploration-node IDs returned by list_facts/list_findings/graph_overview; use list_assets/asset_neighbors for assets.",
+	return t.readExpTool("node_detail", "Retrieve full exploration-node content by id from this task or a directly related task. Inherited nodes include source_task_id/inherited=true and are read-only. Only accepts exploration-node IDs returned by list_facts/graph_overview; use list_assets for assets.",
 		obj(map[string]any{"id": idp("Exploration graph node id (not an asset id)")}, "id"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
@@ -1008,9 +908,6 @@ func (t *ToolSet) nodeDetail() actool.CoreTool {
 			if n == nil {
 				return actool.Errorf(fmt.Sprintf("Exploration node %d was not found. To query an asset, use list_assets / asset_neighbors: assets and exploration nodes have separate ID spaces, and asset IDs cannot be passed to node_detail.", id)), nil
 			}
-			if err := t.ts.PopulateFindingTrafficIDs([]*db.Node{n}); err != nil {
-				return actool.Errorf(err.Error()), nil
-			}
 			return jsonResult(n) // full payload incl. detail / evidence, plus explicit finding IDs
 		})
 }
@@ -1026,7 +923,7 @@ type intentItem struct {
 }
 
 // addOneIntent creates an intent node, links its upstream lineage, and returns its id.
-// Each parent_id must be an existing confirmed fact/finding node, never an intent/goal/hint.
+// Each parent_id must be an existing confirmed fact node, never an intent/goal/hint.
 // Leave parent_ids empty for a new top-level direction; it links to the origin fact as a fallback.
 // The creation path enforces fact anchoring and discovery-driven planning.
 func (t *ToolSet) addOneIntent(it intentItem) (int64, error) {
@@ -1038,10 +935,10 @@ func (t *ToolSet) addOneIntent(it intentItem) (int64, error) {
 	for _, pidv := range parents {
 		n, err := t.ts.GetNodeWithSources(pidv)
 		if err != nil || n == nil {
-			return 0, fmt.Errorf("parent_id %d does not exist in this task or a directly related task: parent_ids must contain existing fact/finding node IDs. Leave parent_ids empty for a new top-level direction.", pidv)
+			return 0, fmt.Errorf("parent_id %d does not exist in this task or a directly related task: parent_ids must contain existing fact node IDs. Leave parent_ids empty for a new top-level direction.", pidv)
 		}
-		if n.Kind != db.KindFact && n.Kind != db.KindFinding {
-			return 0, fmt.Errorf("parent_id %d is a %q node and cannot anchor an intent. Intents must anchor to confirmed fact/finding nodes, never intents/goals/hints. Leave parent_ids empty for a new top-level direction.", pidv, n.Kind)
+		if n.Kind != db.KindFact {
+			return 0, fmt.Errorf("parent_id %d is a %q node and cannot anchor an intent. Intents must anchor to confirmed fact nodes, never intents/goals/hints. Leave parent_ids empty for a new top-level direction.", pidv, n.Kind)
 		}
 	}
 	priority := it.Priority
@@ -1089,13 +986,13 @@ func (t *ToolSet) addOneIntent(it intentItem) (int64, error) {
 }
 
 func (t *ToolSet) addIntent() actool.CoreTool {
-	return t.writeExpTool("add_intent", "Create exploration directions in frontier and link them into exploration lineage. An intent is an open exploration direction, not a fixed type; freely describe what to investigate/verify/exploit in a one-sentence summary.\n"+
+	return t.writeExpTool("add_intent", "Create exploration directions in frontier and link them into exploration lineage. An intent is an open exploration direction, not a fixed type; freely describe what to investigate/verify in a one-sentence summary.\n"+
 		"Prefer batches: submit multiple new directions in intents at once to reduce round trips. The returned ids array has the same length and order (failed entries have id=0; see errors). For a single entry, omit intents and use top-level summary.",
 		obj(map[string]any{
 			"intents":    map[string]any{"type": "array", "description": "Preferred: new exploration directions processed in order. Each element uses the top-level fields below (summary/asset_ids/parent_ids/priority). The returned ids array has the same length and order.", "items": map[string]any{"type": "object"}},
 			"summary":    str("[Single entry] Describe what to explore and why in one sentence. A clear direction does not depend on an asset id."),
 			"asset_ids":  map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Target asset IDs to test/attack (provide whenever possible; zero, one, or many IDs from list_assets, not exploration-node IDs). Identify the sites/endpoints/parameters/hosts targeted by this direction. Always provide them when concrete assets are involved: these structured targets support coverage deduplication and asset-lineage links. Leave empty only for purely global reconnaissance without a specific target asset."},
-			"parent_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Optional upstream anchor IDs (zero, one, or many): confirmed facts/findings jointly motivating this direction. Only existing fact/finding node IDs are allowed, never intent/goal/hint IDs. Intents must be based on confirmed knowledge and discoveries, not invented plans. Supply multiple facts if they jointly produce an intent; leave empty for a new top-level reconnaissance direction (automatically linked to the origin fact)."},
+			"parent_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Optional upstream anchor IDs (zero, one, or many): confirmed facts jointly motivating this direction. Only existing fact node IDs are allowed, never intent/goal/hint IDs. Intents must be based on confirmed knowledge and discoveries, not invented plans. Supply multiple facts if they jointly produce an intent; leave empty for a new top-level reconnaissance direction (automatically linked to the origin fact)."},
 			"priority":   intp("Priority 0-10, default 5"),
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
@@ -1155,10 +1052,10 @@ func (t *ToolSet) listGoals() actool.CoreTool {
 }
 
 func (t *ToolSet) proveGoal() actool.CoreTool {
-	return t.writeExpTool("prove_goal", "Call when a finding/fact proves a goal has been met: link its evidence node to the goal node and mark the goal met.",
+	return t.writeExpTool("prove_goal", "Call when a fact proves a goal has been met: link its evidence node to the goal node and mark the goal met.",
 		obj(map[string]any{
 			"goal_id":     idp("Goal node id"),
-			"evidence_id": idp("Finding/fact node id that proves it"),
+			"evidence_id": idp("Fact node id that proves it"),
 			"reason":      str("Why this evidence satisfies the goal"),
 		}, "goal_id", "evidence_id"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
@@ -1177,8 +1074,8 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 				return actool.Errorf("goal_id must be a goal in this task (related-task goals are read-only)"), nil
 			}
 			evidenceNode, err := t.ts.GetNodeWithSources(ev)
-			if err != nil || evidenceNode == nil || (evidenceNode.Kind != db.KindFact && evidenceNode.Kind != db.KindFinding) {
-				return actool.Errorf("evidence_id must be a fact/finding node in this task or a directly related task"), nil
+			if err != nil || evidenceNode == nil || evidenceNode.Kind != db.KindFact {
+				return actool.Errorf("evidence_id must be a fact node in this task or a directly related task"), nil
 			}
 			_ = t.ts.Link(ev, db.RelProves, goal)
 			_ = t.ts.SetNodeState(goal, "met")
@@ -1203,7 +1100,7 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 }
 
 func (t *ToolSet) goalMet() actool.CoreTool {
-	return writeTool("goal_met", "[Immediately end the entire task] Call only when ALL task goals have truly been met and the whole task is complete. Achieving just one goal, flag, or vulnerability is insufficient; use prove_goal for that goal. This tool does not end a planning turn: when there are no new intents to dispatch or you are waiting for workers, simply end the turn without calling it (zero intents is normal). Prefer proving goals individually with prove_goal; goal_met bypasses individual proofs to declare overall completion directly.",
+	return writeTool("goal_met", "[Immediately end the entire task] Call only when ALL task goals have truly been met and the whole task is complete. Achieving just one goal is insufficient; use prove_goal for that goal. This tool does not end a planning turn: when there are no new intents to dispatch or you are waiting for workers, simply end the turn without calling it (zero intents is normal). Prefer proving goals individually with prove_goal; goal_met bypasses individual proofs to declare overall completion directly.",
 		obj(map[string]any{"reason": str("Completion reason based on evidence that goals were truly met, never a turn-ending reason such as 'no new directions this turn'")}, "reason"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct{ Reason string }
@@ -1215,87 +1112,6 @@ func (t *ToolSet) goalMet() actool.CoreTool {
 }
 
 // --- worker write tools ---
-
-func (t *ToolSet) addFinding() actool.CoreTool {
-	return writeTool("report_finding", "Record a confirmed vulnerability with verifiable evidence such as command output or logs in evidence. In task context, pass the current intent_id. Returned finding_id is the standalone finding record ID; finding_node_id is the exploration node ID (also retained on the first line).", obj(map[string]any{
-		"vulnclass": str("Vulnerability class"), "name": str("Vulnerability name"), "severity": str("critical|high|medium|low"), "summary": str("Finding summary"),
-		"intent_id": idp("Current task intent id"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Affected asset ids"},
-		"evidence":         str("Evidence/PoC text"),
-		"evidence_hint_id": idp("Optional: the hint node ID in this task corresponding to this finding, automatically carrying its structured traffic_refs. Do not reference inherited hints or hints for other findings."),
-		"traffic_refs": map[string]any{"type": "array", "description": "Optional: for HTTP/HTTPS findings, first search and verify each request/response supports the finding, then list real IDs in reproduction order. For non-HTTP findings such as TCP, missing captures, or no exact match, omit or pass [] without blocking submission; you may explain why in evidence and provide other verifiable evidence. Never guess IDs, infer association from domain/time, or repeat probing solely for a capture. Roles: baseline normal comparison / proof vulnerability proof / verification additional verification / supporting supplementary evidence.",
-			"items": obj(map[string]any{"traffic_id": str("Real traffic ID returned by traffic_search"), "role": map[string]any{"type": "string", "enum": []string{"baseline", "proof", "verification", "supporting"}}, "note": str("How this traffic supports the finding")}, "traffic_id")},
-	}, "vulnclass", "severity", "summary"), func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
-		var a struct {
-			VulnClass, Name, Severity, Summary, Evidence string
-			IntentID                                     json.RawMessage   `json:"intent_id"`
-			AssetIDs                                     []json.RawMessage `json:"asset_ids"`
-			TrafficRefs                                  []db.TrafficRef   `json:"traffic_refs"`
-			EvidenceHintID                               json.RawMessage   `json:"evidence_hint_id"`
-		}
-		if err := json.Unmarshal(in, &a); err != nil {
-			return actool.Errorf(err.Error()), nil
-		}
-		if t.ts == nil {
-			return actool.Errorf("report_finding requires task context. In platform chat, hand the finding off to the corresponding task with add_task_hint and include existing traffic_refs so its Agent records it. Use bind_finding_traffic to add evidence to an existing finding."), nil
-		}
-		// Auto-binding off: ignore the evidence params instead of rejecting the call.
-		// stripTrafficParameters already removes them from the advertised schema, but
-		// models routinely emit fields anyway — failing here would discard a confirmed
-		// finding over a stray parameter. The success path below reports evidence_status
-		// "not_bound" with the "disabled; associate manually on the page" note, which is what the caller needs.
-		if !findingTrafficBindingEnabled() {
-			a.TrafficRefs, a.EvidenceHintID = nil, nil
-		}
-		if len(a.EvidenceHintID) > 0 && pid(a.EvidenceHintID) <= 0 {
-			return actool.Errorf("evidence_hint_id must be a valid hint node ID; omit it when no handoff hint exists"), nil
-		}
-		refs, err := t.findingRefsFromHint(pid(a.EvidenceHintID), a.TrafficRefs)
-		if err != nil {
-			return actool.Errorf(err.Error()), nil
-		}
-		input := db.RecordFindingInput{TaskID: t.taskID, ExplorationID: t.ts.ID(), IntentID: pid(a.IntentID), VulnClass: a.VulnClass, Name: a.Name, Severity: a.Severity, Summary: a.Summary, Evidence: a.Evidence, Worker: t.worker, AssetIDs: pidList(a.AssetIDs)}
-		var recorded *db.RecordedFinding
-		if t.findingRecorder != nil {
-			recorded, err = t.findingRecorder.Record(ctx, input, refs)
-		} else if len(refs) > 0 {
-			return actool.Errorf("Traffic evidence storage is unavailable; finding not recorded"), nil
-		} else {
-			recorded, err = t.ts.RecordFinding(ctx, input)
-		}
-		if err != nil {
-			return actool.Errorf(err.Error()), nil
-		}
-		if t.notifyFinding != nil {
-			iid := input.IntentID
-			if iid <= 0 {
-				iid = t.ownerNode
-			}
-			t.notifyFinding(iid, a.Summary)
-		} else if t.notify != nil {
-			t.notify()
-		}
-		t.writes.Findings++
-		// Keep the first line's node-ID contract for existing reporter triggers.
-		for i := range recorded.Traffic.Bindings {
-			recorded.Traffic.Bindings[i].Snapshot.ReqHead = ""
-			recorded.Traffic.Bindings[i].Snapshot.RespHead = ""
-		}
-		result := struct {
-			*db.RecordedFinding
-			EvidenceStatus string `json:"evidence_status"`
-			EvidenceNote   string `json:"evidence_note,omitempty"`
-		}{RecordedFinding: recorded, EvidenceStatus: "bound"}
-		if len(recorded.Traffic.Bindings) == 0 {
-			result.EvidenceStatus = "not_bound"
-			result.EvidenceNote = "Finding saved without traffic binding. Continue normally for TCP/findings without captures. If verified HTTP traffic already exists, bind it using available bind_finding_traffic or the finding page, then finish evidence handoff. Do not create the finding again."
-			if !findingTrafficBindingEnabled() {
-				result.EvidenceNote = "Finding saved. Agent automatic traffic binding is disabled; associate traffic manually on the page."
-			}
-		}
-		raw, _ := json.Marshal(result)
-		return actool.Text(fmt.Sprintf("finding recorded: %d\n%s", recorded.NodeID, raw)), nil
-	})
-}
 
 // recordFact writes a general exploration RESULT/conclusion (not a vuln, not a
 // new asset) into the EXPLORATION graph, chained to the intent that produced it.
@@ -1406,16 +1222,12 @@ func (t *ToolSet) recordFact() actool.CoreTool {
 }
 
 type hintItem struct {
-	Text        string            `json:"text"`
-	AssetIDs    []json.RawMessage `json:"asset_ids"`
-	TrafficRefs []db.TrafficRef   `json:"traffic_refs"`
+	Text     string            `json:"text"`
+	AssetIDs []json.RawMessage `json:"asset_ids"`
 }
 
 // addOneHint adds an active/human hint to the graph, optionally anchors assets, and returns its id.
 func (t *ToolSet) addOneHint(it hintItem) (int64, error) {
-	if len(it.TrafficRefs) > 0 && !findingTrafficBindingEnabled() {
-		return 0, fmt.Errorf("Agent automatic traffic binding is disabled; the hint carrying traffic_refs was not saved. Enable it in system settings or hand off prose only.")
-	}
 	if strings.TrimSpace(it.Text) == "" {
 		return 0, fmt.Errorf("text must not be empty")
 	}
@@ -1425,14 +1237,7 @@ func (t *ToolSet) addOneHint(it hintItem) (int64, error) {
 			anchors = append(anchors, tid)
 		}
 	}
-	refs, err := db.NormalizeTrafficRefs(it.TrafficRefs)
-	if err != nil {
-		return 0, err
-	}
 	payload := map[string]any{"text": it.Text}
-	if len(refs) > 0 {
-		payload["traffic_refs"] = refs
-	}
 	// addHint wakes the planner once after the whole batch is written, including hint text,
 	// avoiding a separate planner trigger for every hint in one add_hint call.
 	return t.ts.AddNode(db.KindHint, payload, 0, "active", "human", anchors)
@@ -1617,10 +1422,9 @@ func (t *ToolSet) addHint() actool.CoreTool {
 	return t.writeExpTool("add_hint", "Add strategic guidance from humans/main Agent to the exploration graph for the planner to read when generating intents next time.\n"+
 		"Prefer batches: submit multiple hints in hints to reduce round trips. The returned ids array has the same length and order (failed entries have id=0; see errors). For a single entry, omit hints and use top-level text.",
 		obj(map[string]any{
-			"hints":        map[string]any{"type": "array", "description": "Preferred: new hints processed in order. Elements use the top-level fields below (text/asset_ids/traffic_refs). The returned ids array has the same length and order.", "items": obj(map[string]any{"text": str("Hint text"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}, "traffic_refs": HintTrafficSchema()})},
-			"text":         str("[Single entry] Hint text, such as 'focus on authenticated endpoints'"),
-			"traffic_refs": HintTrafficSchema(),
-			"asset_ids":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Anchored asset ids (optional; zero, one, or many)"},
+			"hints":     map[string]any{"type": "array", "description": "Preferred: new hints processed in order. Elements use the top-level fields below (text/asset_ids). The returned ids array has the same length and order.", "items": obj(map[string]any{"text": str("Hint text"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}})},
+			"text":      str("[Single entry] Hint text, such as 'focus on authenticated endpoints'"),
+			"asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Anchored asset ids (optional; zero, one, or many)"},
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
@@ -2032,13 +1836,11 @@ func (t *ToolSet) listWorkerTraces() actool.CoreTool {
 // PlannerTools is the read + intent-generation + goal-judgement tool set.
 func (t *ToolSet) PlannerTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
+		t.graphOverview(), t.listFacts(), t.nodeDetail(),
 		// cold-digest §6.1: restore folded cold nodes (digest body → members → detail).
 		t.expandDigest(),
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.listGoals(), t.addIntent(), t.proveGoal(), t.goalMet(),
 		t.killWorkTool(), t.steerWorkTool(),
-		// report_finding: the planner may record vulnerabilities it has confirmed, using the same tool as workers.
-		t.addFinding(),
 		// list_companies: company list, scope, and asset count for company_id lookup and ownership context.
 		t.listCompanies(),
 		// list_assets: query the asset library by DSL during planning, complementing list_untested_assets

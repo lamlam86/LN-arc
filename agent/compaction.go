@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/hypnguyen1209/V-ARTEX/db"
 )
 
 // Compactor performs background cold-node compaction for many explorations.

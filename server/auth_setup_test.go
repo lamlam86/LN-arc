@@ -474,7 +474,7 @@ func TestSetupTokenHeadlessBootstrap(t *testing.T) {
 	if err != nil || stored != hash || s.setupToken != "" {
 		t.Fatal("existing password must ignore bootstrap environment and never be overwritten")
 	}
-	if strings.Contains(logs.String(), password) || strings.Contains(logs.String(), "private-setup-token") || !strings.Contains(logs.String(), adminPasswordEnv) || !strings.Contains(logs.String(), "ARTEX") {
+	if strings.Contains(logs.String(), password) || strings.Contains(logs.String(), "private-setup-token") || !strings.Contains(logs.String(), adminPasswordEnv) || !strings.Contains(logs.String(), "LN-AI") {
 		t.Fatal("headless log must identify env/user without secrets")
 	}
 }

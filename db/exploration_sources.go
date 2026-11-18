@@ -182,29 +182,6 @@ func (s *ExplorationStore) GetNodeWithSources(id int64) (*Node, error) {
 	return nil, nil
 }
 
-// FindingIntentsWithSources combines finding lineage for the current
-// exploration and each direct source. Node ids are globally unique.
-func (s *ExplorationStore) FindingIntentsWithSources() (map[int64]int64, error) {
-	out, err := s.FindingIntents()
-	if err != nil {
-		return nil, err
-	}
-	sources, err := s.DirectSourceStores()
-	if err != nil {
-		return nil, err
-	}
-	for _, source := range sources {
-		items, err := source.Store.FindingIntentsTerminal()
-		if err != nil {
-			return nil, err
-		}
-		for findingID, intentID := range items {
-			out[findingID] = intentID
-		}
-	}
-	return out, nil
-}
-
 // ActivityTraceWithSources returns a work trace when its intent belongs to the
 // current exploration or a direct source. It never searches indirect sources.
 func (s *ExplorationStore) ActivityTraceWithSources(nodeID int64, limit int) ([]Activity, error) {

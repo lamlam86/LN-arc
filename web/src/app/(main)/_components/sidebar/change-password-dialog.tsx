@@ -75,7 +75,7 @@ export function ChangePasswordDialog({
           <DialogHeader>
             <DialogTitle>Change password</DialogTitle>
             <DialogDescription>
-              The username is fixed as <b>ARTEX</b>. Enter your current password to verify your identity. Changing the
+              The username is fixed as <b>LN-ARC</b>. Enter your current password to verify your identity. Changing the
               password signs out every other session. This browser stores a fresh sign-in token.
             </DialogDescription>
           </DialogHeader>

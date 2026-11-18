@@ -1,0 +1,86 @@
+{
+  "task": {
+    "id": "42",
+    "name": "example.com external recon",
+    "status": "done",
+    "started": "2026-11-08T09:00:00+07:00",
+    "finished": "2026-11-08T11:30:00+07:00"
+  },
+  "scope": ["https://example.com", "*.example.com"],
+  "constraints": ["Read-only GET/HEAD only", "No authentication attempts", "Max 5 req/s"],
+  "summary": [
+    "Enumerated 128 subdomains and 46 live HTTP services.",
+    "Mapped 212 API endpoints; 3 are publicly reachable without authentication.",
+    "Found one exposed .git directory and one backup archive (reported, not downloaded).",
+    "Coverage: 78% of live assets probed; 28 remain untested."
+  ],
+  "goals": [
+    { "goal": "Map the external attack surface", "status": "met", "evidence": "graph_overview: 128 subdomains, 46 services" },
+    { "goal": "Enumerate API endpoints", "status": "met", "evidence": "api-recon: 212 endpoints" },
+    { "goal": "Check for public file exposure", "status": "in progress", "evidence": "exposure-recon: 2 hits, 1 host remaining" }
+  ],
+  "assets": {
+    "domains": [{ "value": "example.com", "note": "root", "source": "scope" }],
+    "subdomains": [
+      { "value": "api.example.com", "note": "live, 200", "source": "dnsx + httpx" },
+      { "value": "staging.example.com", "note": "live, 401", "source": "dnsx + httpx" }
+    ],
+    "ips": [{ "value": "203.0.113.10", "note": "A record of api.example.com", "source": "DNS" }],
+    "services": [{ "value": "api.example.com:443", "note": "nginx, HTTP/2", "source": "httpx" }],
+    "technologies": [{ "value": "Next.js", "note": "frontend", "source": "headers + bundle" }]
+  },
+  "dns": [
+    { "name": "example.com", "type": "A", "value": "203.0.113.10", "note": "apex" },
+    { "name": "example.com", "type": "MX", "value": "mail.example.com", "note": "mail provider host" },
+    { "name": "_dmarc.example.com", "type": "TXT", "value": "v=DMARC1; p=quarantine", "note": "policy present" }
+  ],
+  "endpoints": [
+    { "method": "GET", "url": "/api/v1/status", "params": "none", "auth": "none", "source": "runtime_harvest" },
+    { "method": "GET", "url": "/api/v1/users", "params": "page, limit", "auth": "user", "source": "js bundle" }
+  ],
+  "parameters": [
+    { "name": "id", "location": "query", "methods": "GET", "risk": "IDOR/BOLA candidate", "why": "object reference may be swapped to another owner's object", "evidence": "/api/v1/users?id=… (value redacted)" },
+    { "name": "next", "location": "query", "methods": "GET", "risk": "open redirect candidate", "why": "post-login destination is user-controlled", "evidence": "/login?next=… (value redacted)" }
+  ],
+  "auth": [
+    { "surface": "Login form", "endpoint": "/login", "behaviour": "username/password; no MFA observed", "note": "no bypass attempted" }
+  ],
+  "coverage": {
+    "total": 46,
+    "tested": 36,
+    "untested": 10,
+    "untested_assets": ["dev.example.com", "internal.example.com"],
+    "note": "Untested assets were rate-limited or returned 403."
+  },
+  "exposures": [
+    {
+      "severity": "medium",
+      "title": "Exposed Git metadata",
+      "url": "https://staging.example.com/.git/HEAD",
+      "evidence": "HTTP 200, body starts with 'ref: refs/'",
+      "impact": "Repository structure and history may be recoverable by an anonymous visitor.",
+      "remediation": "Block /.git/ at the web server and rebuild the deployment without VCS metadata."
+    }
+  ],
+  "priority_actions": [
+    "Block /.git/ and redeploy without VCS metadata.",
+    "Review object-reference authorization on /api/v1/users (assessment only, not tested).",
+    "Validate the post-login redirect allow-list."
+  ],
+  "traffic": [
+    { "method": "GET", "url": "https://api.example.com/api/v1/status", "status": 200, "content_type": "application/json", "ref": "sha256:…" }
+  ],
+  "timeline": [
+    { "time": "2026-11-08T09:05:00+07:00", "event": "Subdomain enumeration completed (128 found)" },
+    { "time": "2026-11-08T10:10:00+07:00", "event": "API surface mapped (212 endpoints)" }
+  ],
+  "gaps": [
+    "10 live assets were not probed (rate limit).",
+    "Authenticated API surface was out of scope."
+  ],
+  "methodology": [
+    "Tools: dnsx, httpx, api-recon scripts, exposure-recon, traffic capture.",
+    "Request rate capped at 5 req/s; read-only GET/HEAD.",
+    "Limitations: no credential use, no exploitation, single vantage point."
+  ]
+}

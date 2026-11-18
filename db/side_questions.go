@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hypnguyen1209/V-ARTEX/sidequestion"
 	"github.com/google/uuid"
+	"github.com/hypnguyen1209/V-ARTEX/sidequestion"
 )
 
 var ErrSideBusy = errors.New("This session already has a side question being answered")

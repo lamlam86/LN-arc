@@ -15,7 +15,6 @@ type taskArchiveAggregate struct {
 	SkillStats        []SkillStat       `json:"skill_stats"`
 	MissingSkillStats []SkillStat       `json:"missing_skill_stats"`
 	Tools             map[string]int    `json:"tools"`
-	FindingStats      FindingStats      `json:"finding_stats"`
 }
 
 func (d *DB) archivedTaskAggregates() ([]taskArchiveAggregate, error) {

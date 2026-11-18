@@ -14,6 +14,10 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 
+// The backend login account is fixed (hidden from the UI). Rebranding the
+// product to LN-ARC does not change the credential the server expects yet.
+const AUTH_USERNAME = "ARTEX";
+
 export default function LoginPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -68,11 +72,11 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const { token } = await api.login("ARTEX", password);
+      const { token } = await api.login(AUTH_USERNAME, password);
       auth.setToken(token);
       window.location.replace("/function/tasks");
     } catch {
-      setError("Incorrect username or password");
+      setError("Incorrect password");
     } finally {
       setLoading(false);
     }
@@ -88,66 +92,131 @@ export default function LoginPage() {
 
   return (
     <div className="flex h-dvh">
-      {/* Left panel */}
-      <div className="hidden flex-col items-center justify-center bg-primary p-12 text-center lg:flex lg:w-1/3">
-        <div className="relative flex items-center justify-center">
-          <div className="absolute size-80 rounded-full border border-primary-foreground/10" />
-          <div className="absolute size-60 rounded-full border border-primary-foreground/15" />
-          <div className="absolute size-40 rounded-full border border-primary-foreground/20" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="ARTEX" width={160} height={160} className="relative brightness-0 invert" />
+      {/* Left panel — Cyber themed */}
+      <div className="relative hidden flex-col items-center justify-center overflow-hidden bg-[#070B14] p-12 text-center lg:flex lg:w-2/5">
+        {/* Animated grid background */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(34,211,238,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,0.3) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }}
+        />
+        {/* Radial glow */}
+        <div className="pointer-events-none absolute top-1/2 left-1/2 size-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/[0.07] blur-[100px]" />
+        {/* Scan line effect */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(34,211,238,0.15) 2px, rgba(34,211,238,0.15) 4px)",
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col items-center">
+          {/* Radar rings */}
+          <div className="relative flex items-center justify-center">
+            <div className="absolute size-72 animate-[spin_20s_linear_infinite] rounded-full border border-cyan-400/10" />
+            <div
+              className="absolute size-56 animate-[spin_15s_linear_infinite_reverse] rounded-full border border-cyan-400/15"
+              style={{ borderStyle: "dashed" }}
+            />
+            <div className="absolute size-40 animate-[spin_10s_linear_infinite] rounded-full border border-indigo-400/20" />
+            <div className="absolute size-24 rounded-full border border-cyan-400/25" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo-mono.svg"
+              alt="LN-ARC"
+              width={140}
+              height={140}
+              className="relative drop-shadow-[0_0_30px_rgba(34,211,238,0.3)]"
+            />
+          </div>
+
+          {/* Title */}
+          <div className="mt-10 text-center">
+            <div className="bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text font-black text-5xl text-transparent tracking-tight drop-shadow-[0_0_25px_rgba(34,211,238,0.25)]">
+              LN-ARC
+            </div>
+            <div className="mt-2 font-semibold text-[11px] text-cyan-400/50 uppercase tracking-[0.35em]">
+              Autonomous Reconnaissance Console
+            </div>
+          </div>
+
+          {/* Info badges */}
+          <div className="mt-8 flex flex-col gap-2.5 text-[10px]">
+            <div className="flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 px-4 py-1.5 text-cyan-300/70">
+              <span className="inline-block size-1.5 animate-pulse rounded-full bg-cyan-400" />
+              LLM-Driven Multi-Agent System
+            </div>
+          </div>
         </div>
+
+        {/* Corner decorations */}
+        <div className="absolute top-4 left-4 size-8 border-cyan-500/20 border-t-2 border-l-2" />
+        <div className="absolute top-4 right-4 size-8 border-cyan-500/20 border-t-2 border-r-2" />
+        <div className="absolute bottom-4 left-4 size-8 border-cyan-500/20 border-b-2 border-l-2" />
+        <div className="absolute right-4 bottom-4 size-8 border-cyan-500/20 border-r-2 border-b-2" />
       </div>
 
       {/* Right panel */}
-      <div className="flex w-full items-center justify-center bg-background p-8 lg:w-2/3">
-        <div className="w-full max-w-md space-y-10 py-24 lg:py-32">
+      <div className="relative flex w-full items-center justify-center overflow-hidden bg-background p-8 lg:w-3/5">
+        <div className="pointer-events-none absolute -top-24 right-0 size-80 rounded-full bg-cyan-500/[0.06] blur-[110px]" />
+        <div className="pointer-events-none absolute -bottom-24 left-0 size-80 rounded-full bg-indigo-500/[0.05] blur-[110px]" />
+        <div className="relative w-full max-w-md space-y-10 py-24 lg:py-32">
           <div className="space-y-4 text-center">
-            <h2 className="text-2xl font-medium tracking-tight">Sign in</h2>
-            <p className="mx-auto max-w-xl text-muted-foreground">
-              Welcome back. Enter your password to continue using ARTEX.
+            {/* Mobile logo */}
+            <div className="mb-6 flex items-center justify-center gap-3 lg:hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.svg" alt="LN-ARC" width={48} height={48} />
+              <span className="bg-gradient-to-r from-cyan-300 to-indigo-300 bg-clip-text font-black text-2xl text-transparent tracking-tight">
+                LN-ARC
+              </span>
+            </div>
+            <h2 className="font-medium text-2xl tracking-tight">Sign in</h2>
+            <p className="mx-auto max-w-xl text-muted-foreground text-sm">
+              Welcome back. Enter your password to access the reconnaissance console.
             </p>
           </div>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="username">Username</Label>
-              <Input id="username" value="ARTEX" readOnly className="bg-muted text-muted-foreground" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                autoFocus
-                autoComplete="current-password"
-              />
-            </div>
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="agree-terms"
-                checked={agreed}
-                onCheckedChange={(v) => setAgreed(v === true)}
-                className="mt-0.5"
-              />
-              <Label htmlFor="agree-terms" className="text-sm font-normal leading-relaxed text-muted-foreground">
-                I have read and agree to{" "}
-                <button
-                  type="button"
-                  onClick={() => setTermsOpen(true)}
-                  className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  Terms of Use
-                </button>
-              </Label>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading || !password || !agreed}>
-              {loading ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
+          <div className="rounded-2xl border border-cyan-500/15 bg-card/60 p-6 shadow-[0_0_60px_-20px_rgba(34,211,238,0.45)] backdrop-blur-sm">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoFocus
+                  autoComplete="current-password"
+                />
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="agree-terms"
+                  checked={agreed}
+                  onCheckedChange={(v) => setAgreed(v === true)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="agree-terms" className="font-normal text-muted-foreground text-sm leading-relaxed">
+                  I have read and agree to{" "}
+                  <button
+                    type="button"
+                    onClick={() => setTermsOpen(true)}
+                    className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Terms of Use
+                  </button>
+                </Label>
+              </div>
+              {error && <p className="text-destructive text-sm">{error}</p>}
+              <Button type="submit" className="w-full" disabled={loading || !password || !agreed}>
+                {loading ? "Signing in..." : "Sign in"}
+              </Button>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -158,8 +227,8 @@ export default function LoginPage() {
               <ShieldCheck className="size-5" />
             </div>
             <div className="space-y-0.5">
-              <DialogTitle className="text-base">ARTEX Terms of Use and Disclaimer</DialogTitle>
-              <p className="text-xs text-muted-foreground">
+              <DialogTitle className="text-base">LN-ARC Terms of Use and Disclaimer</DialogTitle>
+              <p className="text-muted-foreground text-xs">
                 Version v1.0 · Effective September 18, 2026 · Read all the following terms in full before signing in
               </p>
             </div>
@@ -168,10 +237,10 @@ export default function LoginPage() {
           <div
             ref={termsBodyRef}
             onScroll={handleTermsScroll}
-            className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-5 text-sm leading-relaxed text-muted-foreground"
+            className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-5 text-muted-foreground text-sm leading-relaxed"
           >
             <p className="rounded-lg border bg-muted/40 p-3 text-foreground/80">
-              These Terms of Use and Disclaimer (the "Statement") form an agreement between you and the ARTEX project
+              These Terms of Use and Disclaimer (the "Statement") form an agreement between you and the LN-ARC project
               authors and contributors regarding your use of this software. Before using it, carefully read and fully
               understand every provision, particularly the disclaimers, limitations of liability, and prohibitions
               highlighted in bold or colored blocks.
@@ -184,23 +253,36 @@ export default function LoginPage() {
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   1
                 </span>
                 Article 1 · Definitions and Open Source License
               </h4>
               <p className="pl-7">
-                This software (ARTEX) is an open source program released under the GNU Affero General Public License
+                This software (LN-ARC) is an open source program released under the GNU Affero General Public License
                 v3.0 (AGPL-3.0). You may freely use, copy, modify, and distribute it in accordance with that license;
                 however, any derivative work (including online services provided to third parties over a network) must
                 also be released as open source under AGPL-3.0, with its complete corresponding source code made
                 available to users. The accompanying LICENSE file contains the full, authoritative AGPL-3.0 terms.
               </p>
+              <p className="rounded-lg border bg-muted/40 p-3 pl-7 text-xs">
+                LN-ARC is a derivative work based on the open-source{" "}
+                <a
+                  href="https://github.com/hypnguyen1209/V-ARTEX"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-foreground underline underline-offset-4"
+                >
+                  upstream project
+                </a>{" "}
+                licensed under AGPL-3.0. Original copyright notices remain in the LICENSE file and the upstream project
+                history.
+              </p>
             </section>
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   2
                 </span>
                 Article 2 · Permitted Uses
@@ -215,7 +297,7 @@ export default function LoginPage() {
 
             <section className="space-y-2">
               <h4 className="flex items-center gap-2 font-medium text-destructive">
-                <span className="flex size-5 items-center justify-center rounded-md bg-destructive/10 text-xs font-semibold text-destructive">
+                <span className="flex size-5 items-center justify-center rounded-md bg-destructive/10 font-semibold text-destructive text-xs">
                   3
                 </span>
                 <AlertTriangle className="size-4" />
@@ -248,7 +330,7 @@ export default function LoginPage() {
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   4
                 </span>
                 Article 4 · Intellectual Property
@@ -263,7 +345,7 @@ export default function LoginPage() {
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   5
                 </span>
                 Article 5 · Data and Privacy
@@ -278,7 +360,7 @@ export default function LoginPage() {
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   6
                 </span>
                 Article 6 · Compliance and Legal Responsibility
@@ -298,7 +380,7 @@ export default function LoginPage() {
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   7
                 </span>
                 Article 7 · Disclaimer and Limitation of Liability
@@ -316,7 +398,7 @@ export default function LoginPage() {
 
             <section className="space-y-1.5">
               <h4 className="flex items-center gap-2 font-medium text-foreground">
-                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground text-xs">
                   8
                 </span>
                 Article 8 · Changes to Terms and Final Interpretation
@@ -332,7 +414,7 @@ export default function LoginPage() {
           </div>
 
           <DialogFooter className="mx-0 mb-0 flex-col items-stretch gap-2 rounded-b-xl px-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {readToEnd ? "You have viewed all terms" : "Scroll to the bottom of the terms before confirming"}
             </p>
             <DialogClose asChild>

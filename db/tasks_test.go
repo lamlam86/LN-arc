@@ -169,23 +169,12 @@ func TestTaskDeleteCascadeAssets(t *testing.T) {
 		t.Fatalf("shared host was not protected from traffic cleanup: %v", deletableHosts)
 	}
 
-	findingID, err := d.AddFinding(first.ID, 0, "__task_delete_cascade__", "", SeverityHigh, "summary", "evidence", "tester", []int64{exclusiveID})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := d.DeleteTaskCascade(first.ID, true, true)
+	result, err := d.DeleteTaskCascade(first.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.AssetsDeleted < 2 || result.AssetsDetached < 2 {
 		t.Fatalf("unexpected asset cleanup result: %+v", result)
-	}
-	if result.FindingsDeleted != 1 {
-		t.Fatalf("unexpected finding cleanup result: %+v", result)
-	}
-	if finding, err := d.GetFinding(findingID); err != nil || finding != nil {
-		t.Fatalf("finding should be deleted, got finding=%+v err=%v", finding, err)
 	}
 	remaining, err := assets.GetByIDs([]int64{exclusiveID, sharedID, anchorOnlyID, protectedID})
 	if err != nil {

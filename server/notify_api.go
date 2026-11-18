@@ -448,7 +448,7 @@ func notifyTestMessage(baseURL string) notify.Message {
 			Name:      "Test message · Channel configured successfully",
 			VulnClass: "Connectivity test",
 			Severity:  "low",
-			Summary:   "This is a test message from an ARTEX notification channel. Receiving it confirms the channel configuration works.",
+			Summary:   "This is a test message from an LN-AI notification channel. Receiving it confirms the channel configuration works.",
 			Assets:    []string{"artex.example.com"},
 			DetailURL: baseURL,
 		}},

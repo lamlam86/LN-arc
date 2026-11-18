@@ -173,7 +173,12 @@ WHERE id=$1`,
 // Disabling also marks unsent deliveries skipped; otherwise re-enabling would suddenly deliver
 // stale findings accumulated during downtime, easily mistaken for new findings.
 func (d *DB) SetNotificationChannelEnabled(ctx context.Context, id int64, enabled bool) error {
-	return d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after successful commit.
+	{
 		res, err := tx.ExecContext(ctx, `UPDATE notification_channels SET enabled=$2 WHERE id=$1`, id, enabled)
 		if err != nil {
 			return err
@@ -188,8 +193,8 @@ WHERE channel_id=$1 AND state IN ($4,$5)`,
 				return err
 			}
 		}
-		return nil
-	})
+	}
+	return tx.Commit()
 }
 
 // DeleteNotificationChannel deletes the channel and cascades its delivery history;
@@ -450,85 +455,14 @@ func assetDisplayName(typ, domain, ip, url, appName, bundleID string) string {
 	}
 }
 
-// SetFindingStatusWithNotify updates finding status and records a status-change event
-// in the same transaction.
-//
-// Returns from=previous status, found=finding exists, notified=event registered.
-//
-// Three deliberate behaviors:
-// - No event when status is unchanged; duplicate drawer submissions or idempotent
-// automation replays must not create notification noise.
-// - Missing findings return found=false without writes; caller maps this to 404.
-// - Event-write failures do not affect status changes (see RecordNotificationEventTx savepoints);
-// notified=false still means status was updated, so callers must not report failure.
-func (d *DB) SetFindingStatusWithNotify(ctx context.Context, id int64, status string) (from string, found bool, notified bool, err error) {
-	err = d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
-		var txErr error
-		from, found, _, notified, txErr = SetFindingStatusTx(ctx, tx, id, status)
-		return txErr
-	})
-	return from, found, notified, err
-}
-
-// SetFindingStatusTx updates status and records a status-change event in the caller's transaction.
-//
-// Shared transaction-level logic keeps all status-changing paths consistent. Previously only
-// patchFinding used notifications; fixed retest verdicts used a direct
-// UPDATE findings SET status=... in finding_retests, so channels configured with
-// on_status_change received no event for those transitions. The UI changed silently,
-// requiring operators to open the platform to notice.
-//
-// Returns from=previous status, found=finding exists, changed=status actually changed,
-// notified=event registered (failure does not affect status; see RecordNotificationEventTx).
-func SetFindingStatusTx(ctx context.Context, tx *sql.Tx, id int64, status string) (from string, found bool, changed bool, notified bool, err error) {
-	var (
-		vulnclass, name, severity, summary string
-		taskID                             sql.NullInt64
-		assetIDs                           []byte
-	)
-	scanErr := tx.QueryRowContext(ctx, `SELECT vulnclass, name, severity, summary, task_id, asset_ids, status
-FROM findings WHERE id=$1 FOR UPDATE`, id).
-		Scan(&vulnclass, &name, &severity, &summary, &taskID, &assetIDs, &from)
-	if scanErr == sql.ErrNoRows {
-		return "", false, false, false, nil
-	}
-	if scanErr != nil {
-		return "", false, false, false, scanErr
-	}
-	found = true
-	if from == status {
-		// No event when the status is unchanged: duplicate submissions and idempotent replays
-		// must not create notification noise.
-		return from, true, false, false, nil
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status=$2 WHERE id=$1`, id, status); err != nil {
-		return from, true, false, false, err
-	}
-	var assets []int64
-	_ = json.Unmarshal(assetIDs, &assets)
-	notified = RecordNotificationEventTx(ctx, tx, notify.EventFindingStatusChanged, id, notify.Snapshot{
-		Kind:       notify.EventFindingStatusChanged,
-		FindingID:  id,
-		TaskID:     taskID.Int64,
-		VulnClass:  vulnclass,
-		Name:       name,
-		Severity:   severity,
-		Summary:    summary,
-		AssetIDs:   assets,
-		FromStatus: from,
-		ToStatus:   status,
-	})
-	return from, true, true, notified, nil
-}
-
-// NotificationStats contains the notification page's overview counts.
+// NotificationStats summarizes notification-system health.
 type NotificationStats struct {
 	Channels     int   `json:"channels"`
 	ChannelsOn   int   `json:"channels_on"`
 	Pending      int   `json:"pending"`
 	Failed       int   `json:"failed"`
 	SentToday    int   `json:"sent_today"`
-	BacklogAgeMS int64 `json:"backlog_age_ms"` // Milliseconds since the oldest pending delivery.
+	BacklogAgeMS int64 `json:"backlog_age_ms"`
 }
 
 // NotificationStatsSnapshot summarizes notification-system health.

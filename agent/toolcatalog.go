@@ -40,12 +40,12 @@ func builtinToolsByAgent() map[string][]actool.CoreTool {
 		// goals defaults to set_goals + set_constraints to persist decomposed goals and extracted
 		// constraints. Shared managed tools with mainagent; the UI edits descriptions/schema and per-agent bindings.
 		"goals": {ts.setGoals(), ts.setConstraints()},
-		// auto defaults to finding reporting and asset management; other domain tools can be enabled in the UI.
+		// auto defaults to asset management; other domain tools can be enabled in the UI.
 		// Seed new databases here; seedAutoDefaultBindings migrates existing databases.
-		"auto": {ts.addFinding(), ts.insertAssets(), ts.addCompanyScope(), ts.listAssets(), ts.listCompanies()},
-		// pentest defaults to querying/inserting assets, reporting/listing findings, and listing companies.
+		"auto": {ts.insertAssets(), ts.addCompanyScope(), ts.listAssets(), ts.listCompanies()},
+		// pentest defaults to querying/inserting assets and listing companies.
 		// Seed new databases here; seedPentestDefaultBindings migrates existing databases.
-		"pentest": {ts.listAssets(), ts.insertAssets(), ts.addFinding(), ts.listFindings(), ts.listCompanies()},
+		"pentest": {ts.listAssets(), ts.insertAssets(), ts.listCompanies()},
 	}
 }
 

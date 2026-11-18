@@ -214,7 +214,6 @@ function deleteDetails(result: DeleteCounts): string[] {
   if (result.assets_detached > 0) details.push(`Detached shared assets: ${result.assets_detached} records`);
   if (result.traffic_deleted > 0) details.push(`Deleted traffic records: ${result.traffic_deleted} records`);
   if (result.files_deleted) details.push("Deleted task files");
-  if (result.findings_deleted > 0) details.push(`Deleted findings: ${result.findings_deleted} records`);
   if (result.llm_records_deleted > 0)
     details.push(`Deleted LLM request/response records: ${result.llm_records_deleted} records`);
   return details;
@@ -628,7 +627,6 @@ export default function TasksPage() {
         assets_detached: 0,
         traffic_deleted: 0,
         files_deleted: false,
-        findings_deleted: 0,
         llm_records_deleted: 0,
       };
       const deleted: string[] = [];
@@ -642,7 +640,6 @@ export default function TasksPage() {
           total.assets_detached += r.assets_detached;
           total.traffic_deleted += r.traffic_deleted;
           total.files_deleted = total.files_deleted || r.files_deleted;
-          total.findings_deleted += r.findings_deleted;
           total.llm_records_deleted += r.llm_records_deleted;
           if (r.cleanup_warning) warnings.push(`#${id}: ${r.cleanup_warning}`);
           deleted.push(id);
@@ -958,9 +955,6 @@ export default function TasksPage() {
                       onSort={sortTasksBy}
                     />
                     <TableHead className="text-center">Goal Progress</TableHead>
-                    <TableHead className="text-center" title="Critical / High / Medium / Low">
-                      Findings <span className="text-muted-foreground font-normal">C/H/M/L</span>
-                    </TableHead>
                     <TableHead className="text-center">Running Workers</TableHead>
                     <SortableTaskHead
                       field="created"
@@ -1229,25 +1223,6 @@ const TaskRow = React.memo(function TaskRow({
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
-      </TableCell>
-      <TableCell className="text-center text-xs tabular-nums">
-        {(() => {
-          const f = task.findings;
-          const total = f ? f.critical + f.high + f.medium + f.low : 0;
-          if (!f || total === 0) return <span className="text-muted-foreground">0</span>;
-          const seg = (n: number, cls: string) => <span className={n > 0 ? cls : "text-muted-foreground"}>{n}</span>;
-          return (
-            <span className="font-medium whitespace-nowrap" title="Critical / High / Medium / Low">
-              {seg(f.critical, "text-rose-600 dark:text-rose-400")}
-              <span className="text-muted-foreground">/</span>
-              {seg(f.high, "text-red-600 dark:text-red-400")}
-              <span className="text-muted-foreground">/</span>
-              {seg(f.medium, "text-amber-600 dark:text-amber-400")}
-              <span className="text-muted-foreground">/</span>
-              {seg(f.low, "text-slate-600 dark:text-slate-400")}
-            </span>
-          );
-        })()}
       </TableCell>
       <TableCell className="text-center text-xs tabular-nums">
         {task.in_flight && task.in_flight > 0 ? (
@@ -2032,7 +2007,6 @@ const emptyDeleteOptions = (): DeleteTaskOptions => ({
   delete_assets: false,
   delete_traffic: false,
   delete_files: false,
-  delete_findings: false,
   delete_llm_records: false,
 });
 
@@ -2040,7 +2014,6 @@ const deleteOptionKeys: (keyof DeleteTaskOptions)[] = [
   "delete_assets",
   "delete_traffic",
   "delete_files",
-  "delete_findings",
   "delete_llm_records",
 ];
 
@@ -2075,7 +2048,6 @@ function DeleteOptionFields({
       delete_assets: checked,
       delete_traffic: checked,
       delete_files: checked,
-      delete_findings: checked,
       delete_llm_records: checked,
     });
   };
@@ -2093,7 +2065,7 @@ function DeleteOptionFields({
           <FieldContent>
             <FieldLabel htmlFor={`delete-all-${idPrefix}`}>Delete all</FieldLabel>
             <FieldDescription>
-              Select all linked data below, including assets, traffic, files, findings, and LLM request/response
+              Select all linked data below, including assets, traffic, files, and LLM request/response
               records.
             </FieldDescription>
           </FieldContent>
@@ -2135,19 +2107,6 @@ function DeleteOptionFields({
             <FieldLabel htmlFor={`delete-files-${idPrefix}`}>Task Files</FieldLabel>
             <FieldDescription>
               Delete uploaded files, command outputs, and other artifacts in the task's working directory.
-            </FieldDescription>
-          </FieldContent>
-        </Field>
-        <Field orientation="horizontal">
-          <Checkbox
-            id={`delete-findings-${idPrefix}`}
-            checked={options.delete_findings}
-            onCheckedChange={(checked) => updateOption("delete_findings", checked === true)}
-          />
-          <FieldContent>
-            <FieldLabel htmlFor={`delete-findings-${idPrefix}`}>Linked Findings</FieldLabel>
-            <FieldDescription>
-              Permanently delete independent finding records and vulnerability reports produced by this task.
             </FieldDescription>
           </FieldContent>
         </Field>

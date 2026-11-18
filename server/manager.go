@@ -15,13 +15,13 @@ import (
 	"sync"
 	"time"
 
+	actool "github.com/Autumn-27/norma/tool"
 	"github.com/hypnguyen1209/V-ARTEX/agent"
 	pgdb "github.com/hypnguyen1209/V-ARTEX/db"
 	"github.com/hypnguyen1209/V-ARTEX/enrich"
 	"github.com/hypnguyen1209/V-ARTEX/guard"
 	"github.com/hypnguyen1209/V-ARTEX/intercept"
 	"github.com/hypnguyen1209/V-ARTEX/traffic"
-	actool "github.com/Autumn-27/norma/tool"
 )
 
 // Task is one engagement: a description + goal + its own exploration store,
@@ -198,7 +198,6 @@ type DeleteTaskOptions struct {
 	DeleteAssets     bool `json:"delete_assets"`
 	DeleteTraffic    bool `json:"delete_traffic"`
 	DeleteFiles      bool `json:"delete_files"`
-	DeleteFindings   bool `json:"delete_findings"`
 	DeleteLLMRecords bool `json:"delete_llm_records"`
 }
 
@@ -209,7 +208,6 @@ type DeleteTaskResult struct {
 	AssetsDetached    int64  `json:"assets_detached"`
 	TrafficDeleted    int64  `json:"traffic_deleted"`
 	FilesDeleted      bool   `json:"files_deleted"`
-	FindingsDeleted   int64  `json:"findings_deleted"`
 	LLMRecordsDeleted int64  `json:"llm_records_deleted"`
 	CleanupWarning    string `json:"cleanup_warning,omitempty"`
 }
@@ -367,9 +365,8 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 	if err := migrateEnglishDefaults(context.Background(), pg); err != nil {
 		return nil, errors.Join(fmt.Errorf("migrate legacy English defaults: %w", err), pg.Close())
 	}
-	if err := pg.RecoverFindingRetests(); err != nil {
-		pg.Close()
-		return nil, fmt.Errorf("recover finding retests: %w", err)
+	if err := pg.MigrateReconOnly(); err != nil {
+		return nil, errors.Join(fmt.Errorf("migrate to recon-only mode: %w", err), pg.Close())
 	}
 	if err := pg.EnsureLLMRecordsTable(); err != nil {
 		log.Printf("[llmrec] create table: %v", err)
@@ -406,7 +403,7 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 			go func() {
 				log.Printf("[traffic] recording proxy on %s (set HTTP_PROXY=%s + trust _ca CA)", proxyAddr, tr.ProxyAddr())
 				if err := tr.Start(); err != nil {
-					log.Printf("[traffic] proxy stopped: %v", err)
+					log.Printf("[traffic] capture proxy on %s stopped: %v — traffic will not be recorded (is another process using the port?)", proxyAddr, err)
 				}
 			}()
 		}
@@ -1484,14 +1481,13 @@ func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResul
 	}
 
 	dbResult, err := m.pg.DeleteTaskCascadePrepared(
-		n, opts.DeleteAssets, opts.DeleteFindings, opts.DeleteLLMRecords, prepare,
+		n, opts.DeleteAssets, opts.DeleteLLMRecords, prepare,
 	)
 	if err != nil {
 		return result, rollbackTaskDelete(err, trafficStage, fileStage)
 	}
 	result.AssetsDeleted = dbResult.AssetsDeleted
 	result.AssetsDetached = dbResult.AssetsDetached
-	result.FindingsDeleted = dbResult.FindingsDeleted
 	result.LLMRecordsDeleted = dbResult.LLMRecordsDeleted
 
 	// PostgreSQL is now authoritative: finalize the staged external deletion and
@@ -1769,15 +1765,6 @@ func (t *Task) NotifyDone(intentID int64) {
 		t.pendingTriggers = append(t.pendingTriggers, agent.TriggerEvent{Kind: "done", IntentID: intentID})
 		t.trigMu.Unlock()
 	}
-	t.Notify()
-}
-
-// NotifyFinding records that a worker reported a finding on intentID (summary),
-// then wakes the planner — so the round spells out which intent found what.
-func (t *Task) NotifyFinding(intentID int64, summary string) {
-	t.trigMu.Lock()
-	t.pendingTriggers = append(t.pendingTriggers, agent.TriggerEvent{Kind: "finding", IntentID: intentID, Detail: summary})
-	t.trigMu.Unlock()
 	t.Notify()
 }
 

@@ -7,7 +7,6 @@ import Link from "next/link";
 import {
   ActivityIcon,
   ArrowUpRightIcon,
-  BugIcon,
   ClockIcon,
   NetworkIcon,
   ShieldCheckIcon,
@@ -26,7 +25,6 @@ import type {
   Activity,
   Agent,
   ConvTokenSummary,
-  Finding,
   InterceptPending,
   LLMProfile,
   MCPServer,
@@ -132,7 +130,6 @@ function SectionTitle({
 export default function DashboardPage() {
   // data state
   const [tasks, setTasks] = React.useState<Task[]>([]);
-  const [findings, setFindings] = React.useState<Finding[]>([]);
   const [stats, setStats] = React.useState<Stats | null>(null);
   const [settings, setSettings] = React.useState<Settings | null>(null);
   const [pending, setPending] = React.useState<InterceptPending[]>([]);
@@ -187,8 +184,7 @@ export default function DashboardPage() {
       if (loading) return;
       loading = true;
       try {
-        const [findings, stats, settings, pending, activity, tokens, conversationTokens] = await Promise.all([
-          api.findings(),
+        const [stats, settings, pending, activity, tokens, conversationTokens] = await Promise.all([
           api.stats(),
           api.settings(),
           api.interceptPending(),
@@ -197,7 +193,6 @@ export default function DashboardPage() {
           api.conversationTokens(),
         ]);
         if (!alive) return;
-        setFindings(findings);
         setStats(stats);
         setSettings(settings);
         setPending(pending);
@@ -262,25 +257,12 @@ export default function DashboardPage() {
     return m;
   }, [tasks]);
 
-  const findingsBySev = React.useMemo(() => {
-    const m = { critical: 0, high: 0, medium: 0, low: 0 };
-    for (const f of findings) {
-      if (f.severity in m) m[f.severity as keyof typeof m]++;
-    }
-    return m;
-  }, [findings]);
-
   const sortedTasks = React.useMemo(
     () =>
       [...tasks]
         .sort((a, b) => (b.last_activity_unix ?? b.created_unix ?? 0) - (a.last_activity_unix ?? a.created_unix ?? 0))
         .slice(0, 5),
     [tasks],
-  );
-
-  const recentFindings = React.useMemo(
-    () => [...findings].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, 8),
-    [findings],
   );
 
   const recentActivity = React.useMemo(
@@ -494,10 +476,18 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 pb-6">
       {/* ── Header ── */}
-      <div>
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-xs text-muted-foreground">System-wide status · Live updates</p>
+          <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-xs text-muted-foreground">
+            System overview · Real-time monitoring · Multi-agent status
+          </p>
+        </div>
+        <div className="hidden items-center gap-2 sm:flex">
+          <div className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[10px] font-medium text-primary">
+            <span className="inline-block size-1.5 animate-pulse rounded-full bg-primary" />
+            System Online
+          </div>
         </div>
       </div>
 
@@ -521,22 +511,6 @@ export default function DashboardPage() {
             {(tasksByStatus.paused ?? 0) > 0 && <span className="text-amber-400">Paused {tasksByStatus.paused}</span>}
             {(tasksByStatus.done ?? 0) > 0 && <span className="text-emerald-400">Completed {tasksByStatus.done}</span>}
             {tasks.length === 0 && <span className="text-muted-foreground">No tasks yet</span>}
-          </CardContent>
-        </Card>
-
-        {/* Confirmed findings */}
-        <Card className="gap-1">
-          <CardHeader className="pb-0">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <BugIcon className="size-3" /> Confirmed findings
-            </div>
-            <div className="text-2xl font-semibold tabular-nums">{findings.length}</div>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2.5 text-[10px]">
-            <span className="text-rose-500">Critical {findingsBySev.critical}</span>
-            <span className="text-red-400">High {findingsBySev.high}</span>
-            <span className="text-amber-400">Medium {findingsBySev.medium}</span>
-            <span className="text-slate-400">Low {findingsBySev.low}</span>
           </CardContent>
         </Card>
 
@@ -846,8 +820,8 @@ export default function DashboardPage() {
         </div>
       </Card>
 
-      {/* ── Row 3: Activity feed | Findings ── */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {/* ── Row 3: Activity feed ── */}
+      <div className="grid grid-cols-1 gap-3">
         {/* Activity feed */}
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -910,49 +884,6 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Findings */}
-        <Card className="p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-semibold">
-              <BugIcon className="size-3.5 text-muted-foreground" />
-              Findings
-            </div>
-            <Link
-              href="/function/findings"
-              className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-            >
-              All <ArrowUpRightIcon className="size-3" />
-            </Link>
-          </div>
-
-          <div className="divide-y">
-            {recentFindings.length === 0 ? (
-              <div className="py-4 text-center text-xs text-muted-foreground">No findings yet</div>
-            ) : (
-              recentFindings.map((f) => (
-                <div key={f.id} className="flex items-start gap-2 py-2">
-                  <StatusBadge
-                    domain="severity"
-                    value={f.severity}
-                    className="mt-0.5 shrink-0 px-1.5 py-0 text-[10px]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] font-semibold">{f.vulnclass}</span>
-                      {f.task_description && (
-                        <span className="truncate text-[10px] text-muted-foreground">{f.task_description}</span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
-                      {f.summary}
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">{fmtRel(f.ts)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
       </div>
 
       {/* ── Row 4: Task table ── */}

@@ -3,11 +3,11 @@ import packageJson from "../../package.json";
 const currentYear = new Date().getFullYear();
 
 export const APP_CONFIG = {
-  name: "ARTEX",
+  name: "LN-ARC",
   version: packageJson.version,
-  copyright: `© ${currentYear}, ARTEX.`,
+  copyright: `© ${currentYear}, LN-ARC. Graduation Project.`,
   meta: {
-    title: "ARTEX — Autonomous Penetration Testing Console",
-    description: "Console for an LLM-driven autonomous penetration testing system",
+    title: "LN-ARC — Autonomous AI Reconnaissance Console",
+    description: "Graduation project: An LLM-driven multi-agent system for autonomous network reconnaissance",
   },
 };

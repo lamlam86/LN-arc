@@ -71,7 +71,7 @@ export function UpdateCard() {
   // Poll /api/health until the version changes.
   //
   // Require a changed version, not just connectivity: during replacement the old version briefly restarts
-  // only to install artex.new and exit. Connectivity alone would report success too early.
+  // only to install lnai.new and exit. Connectivity alone would report success too early.
   const waitForNewVersion = React.useCallback(async (fromVersion: string) => {
     setRestarting(true);
     const deadline = Date.now() + RESTART_TIMEOUT_MS;
@@ -94,7 +94,7 @@ export function UpdateCard() {
     }
     setRestarting(false);
     toast.error(
-      "Timed out waiting for the service to restart. Check backend logs and confirm artex was launched through start.sh / start.bat.",
+      "Timed out waiting for the service to restart. Check backend logs and confirm lnai was launched through start.sh / start.bat.",
     );
   }, []);
 
@@ -276,7 +276,7 @@ export function UpdateCard() {
             Docker updates replace only the application, not bundled tools such as playwright / nmap. Recreating the
             container with <span className="font-mono">docker compose up -d</span> restores the image version. To update
             the image as well, run
-            <span className="font-mono"> docker compose pull artex &amp;&amp; docker compose up -d artex</span>.
+            <span className="font-mono"> docker compose pull lnai &amp;&amp; docker compose up -d lnai</span>.
           </p>
         )}
 
@@ -313,9 +313,9 @@ export function UpdateCard() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          One-click updates depend on the supervisor script to restart the application. Launch ARTEX with{" "}
+          One-click updates depend on the supervisor script to restart the application. Launch LN-ARC with{" "}
           <span className="font-mono">start.sh</span> (or on Windows
-          <span className="font-mono"> start.bat</span>). Running the artex binary directly will not restart it after it
+          <span className="font-mono"> start.bat</span>). Running the lnai binary directly will not restart it after it
           exits.
         </p>
       </CardContent>

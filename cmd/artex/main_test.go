@@ -82,6 +82,48 @@ func TestDefaultHTTPAddrIsLoopbackOnly(t *testing.T) {
 	}
 }
 
+func TestIsAddrInUse(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	_, err = net.Listen("tcp", listener.Addr().String())
+	if err == nil {
+		t.Fatal("second listen on a busy address unexpectedly succeeded")
+	}
+	if !isAddrInUse(err) {
+		t.Fatalf("isAddrInUse(%v) = false, want true", err)
+	}
+	if isAddrInUse(errors.New("connection refused")) {
+		t.Fatal("isAddrInUse matched an unrelated error")
+	}
+	if isAddrInUse(nil) {
+		t.Fatal("isAddrInUse(nil) = true, want false")
+	}
+}
+
+func TestListenFailureReturnsPermanentCodeForBusyPort(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().String()
+
+	_, err = net.Listen("tcp", addr)
+	if err == nil {
+		t.Fatal("second listen on a busy address unexpectedly succeeded")
+	}
+	if code := listenFailure(addr, err); code != exitAddrInUse {
+		t.Fatalf("listenFailure on a busy port = %d, want %d", code, exitAddrInUse)
+	}
+	if code := listenFailure(addr, errors.New("permission denied")); code != 1 {
+		t.Fatalf("listenFailure on an unrelated error = %d, want 1", code)
+	}
+}
+
 func TestJWTKeyDir(t *testing.T) {
 	for _, tc := range []struct {
 		name, env, want string

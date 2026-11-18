@@ -25,11 +25,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # @playwright/cli: provides playwright-cli; verify it runs with --help after installation.
 # Also install playwright for browser management, then use --with-deps to preinstall chromium
 # and its system dependencies so MCP/CLI work immediately without downloading a browser at runtime.
+# playwright-cli defaults to the "chrome" channel (/opt/google/chrome/chrome), so Chrome must be
+# installed too; otherwise every `playwright-cli open` fails with a missing-distribution error.
 RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@latest \
     && playwright-cli --help \
     && playwright install --with-deps chromium \
+    && playwright install chrome \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+# The container runs as root, where Chrome refuses to start with its sandbox enabled.
+# Bake a CLI config that launches without the sandbox (playwright-cli otherwise picks the
+# "chrome" channel and dies with "Running as root without --no-sandbox is not supported").
+RUN mkdir -p /app/.playwright && cat > /app/.playwright/cli.config.json <<'JSON'
+{
+  "browser": {
+    "launchOptions": {
+      "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+    }
+  }
+}
+JSON
 # Precompiled binary for the target architecture (dist/amd64/artex or dist/arm64/artex)
 COPY dist/${TARGETARCH}/artex /app/artex
 # The supervisor restarts the process based on its exit code, allowing one-click updates to take effect.
