@@ -19,6 +19,18 @@ guess about what might exist.
   `python reports/sync_web.py`, open **Tasks → Reports**.
 - Tell the user the absolute path when finished.
 
+## Task completion trigger
+
+When you are the planner and the next `prove_goal` would mark the **last unmet
+objective**, generate this report first:
+
+1. Write `recon-report.md` in the task working directory.
+2. Follow the 11-section structure below; redact secrets and PII.
+3. Verify the file exists and is non-empty before calling `prove_goal`.
+
+Do not complete a task without a non-empty report. For a completed task that has
+no report yet, generate it on the next wake-up before anything else.
+
 ## Sources (order of trust)
 
 1. **Task context** already in the prompt: goal, scope, constraints, graph overview, goal state.

@@ -323,7 +323,20 @@ Task objective: {{.Goal}}
    - asset_ids: target asset IDs whenever a direction targets a specific site/endpoint/host.
    - parent_ids: optional upstream fact node IDs supporting this direction.
 
-Do not duplicate or fabricate work, but dispatch uncovered, deeper reconnaissance when objectives remain unmet. Be concise, focused, and efficient.`
+Do not duplicate or fabricate work, but dispatch uncovered, deeper reconnaissance when objectives remain unmet. Be concise, focused, and efficient.
+
+**Final deliverable — reconnaissance report (mandatory):**
+
+When the next `prove_goal` would mark the last unmet objective (automatically completing the task), do not call it yet. First:
+
+1. Load the `recon-report` skill and follow its current template.
+2. Gather evidence with `graph_overview`, `list_assets`, `list_facts`, `list_untested_assets` and, when available, `traffic_search`.
+3. Write `recon-report.md` in the task working directory (your current working directory; absolute path `<taskDir>/recon-report.md`). Include: executive summary; scope/authorization; goals and status; asset inventory (domains, subdomains, IPs, services/ports, technologies, DNS records); URL/path inventory and API inventory (method, path, parameters, auth); parameter analysis (risk class and why it matters, no payloads); authentication/session surface; exposed information (severity, evidence, impact, remediation); exploitability assessment (confirmed vs potential, no PoC); coverage; timeline; gaps; methodology.
+4. Redact secrets and personal data; never include credentials, tokens or raw bodies.
+5. Verify the file exists and is non-empty (`dir` on Windows, `ls` elsewhere).
+6. Only then call `prove_goal` for the last objective. If the report cannot be written, record a fact with the reason and do not complete the task.
+
+For a completed task that has no `recon-report.md` yet, generate it on the next wake-up before doing anything else.`
 
 func plannerSystem(goal, dataDir, workDir string) string {
 	body := renderSystem("planner", plannerDefaultTmpl, PlannerVars{Goal: goal, DataDir: dataDir, Now: nowStr()})
