@@ -1,5 +1,6 @@
 import {
   Ban,
+  Bug,
   FileText,
   FolderOpen,
   LayoutDashboard,
@@ -60,6 +61,7 @@ export const sidebarItems: NavGroup[] = [
       { id: "dashboard", title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
       { id: "chat", title: "Chat", url: "/chat", icon: MessageSquare },
       { id: "tasks", title: "Tasks", url: "/function/tasks", icon: Target },
+      { id: "findings", title: "Findings", url: "/function/findings", icon: Bug },
       { id: "reports", title: "Reports", url: "/function/tasks/reports", icon: FileText },
       { id: "commands", title: "Tool Runs", url: "/function/commands", icon: Terminal },
       { id: "llm-records", title: "LLM Records", url: "/function/llm-records", icon: Radio },

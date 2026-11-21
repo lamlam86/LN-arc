@@ -71,3 +71,6 @@ backups/
 *.log
 /start.bat.bak
 /start.bat.new
+
+# Local agent outputs
+/Claude outputs/

@@ -42,9 +42,12 @@ import type { LLMProfile, Task } from "@/lib/types";
 import { AssetsTab } from "./_tabs/assets-tab";
 import { BroadcastTab } from "./_tabs/broadcast-tab";
 import { CoverageGraphTab } from "./_tabs/coverage-graph-tab";
+import { FindingsTab } from "./_tabs/findings-tab";
 import { GraphTab } from "./_tabs/graph-tab";
 import { InterceptTab } from "./_tabs/intercept-tab";
 import { OverviewTab } from "./_tabs/overview-tab";
+import { ReportTab } from "./_tabs/report-tab";
+import { RetestsTab } from "./_tabs/retests-tab";
 import { SessionsTab } from "./_tabs/sessions-tab";
 
 const TABS = [
@@ -52,9 +55,12 @@ const TABS = [
   { value: "overview", label: "Overview" },
   { value: "graph", label: "Exploration Graph" },
   { value: "broadcast", label: "Broadcast" },
+  { value: "findings", label: "Findings" },
+  { value: "retests", label: "Retests" },
   { value: "assets", label: "Test Assets" },
   { value: "coverage", label: "Asset Coverage" },
   { value: "intercept", label: "Interception Approvals" },
+  { value: "report", label: "Report" },
 ];
 
 function taskProfileIDs(task: Task): string[] {
@@ -135,7 +141,7 @@ function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: L
       setOpen(false);
       onUpdated();
     } catch (error) {
-      toast.error("Update failed: " + (error as Error).message);
+      toast.error(`Update failed: ${(error as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -278,7 +284,7 @@ function TaskDetailInner() {
       setPaused(next);
       toast.success(next ? "Exploration paused" : "Exploration resumed");
     } catch (e) {
-      toast.error("Operation failed: " + (e as Error).message);
+      toast.error(`Operation failed: ${(e as Error).message}`);
     }
   }
 
@@ -355,10 +361,10 @@ function TaskDetailInner() {
               <ArrowLeftIcon />
             </Link>
           </Button>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={task.name || task.description}>
+          <h1 className="min-w-0 flex-1 truncate font-semibold text-sm" title={task.name || task.description}>
             {task.name || task.description}
           </h1>
-          <code className="hidden rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground sm:inline">
+          <code className="hidden rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs sm:inline">
             {task.id}
           </code>
           <Separator orientation="vertical" className="mx-1 hidden h-4 sm:block" />
@@ -394,7 +400,7 @@ function TaskDetailInner() {
             {controlLabel}
           </Button>
         </div>
-        <p className="truncate text-xs text-muted-foreground">{task.goal}</p>
+        <p className="truncate text-muted-foreground text-xs">{task.goal}</p>
         {/* Tabs */}
         <div className="no-scrollbar min-w-0 overflow-x-auto">
           <TabsList variant="default" className="min-w-max">
@@ -402,7 +408,7 @@ function TaskDetailInner() {
               <TabsTrigger key={t.value} value={t.value}>
                 {t.label}
                 {t.value === "intercept" && interceptPendingCount > 0 && (
-                  <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+                  <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 font-semibold text-[10px] text-white leading-none">
                     {interceptPendingCount > 99 ? "99+" : interceptPendingCount}
                   </span>
                 )}
@@ -426,6 +432,12 @@ function TaskDetailInner() {
         <TabsContent value="broadcast" className="mt-0">
           <BroadcastTab taskId={id} />
         </TabsContent>
+        <TabsContent value="findings" className="mt-0">
+          <FindingsTab taskId={id} />
+        </TabsContent>
+        <TabsContent value="retests" className="mt-0">
+          <RetestsTab key={id} taskId={id} />
+        </TabsContent>
         <TabsContent value="assets" className="mt-0">
           <AssetsTab taskId={id} />
         </TabsContent>
@@ -434,6 +446,9 @@ function TaskDetailInner() {
         </TabsContent>
         <TabsContent value="intercept" className="mt-0">
           <InterceptTab taskId={id} />
+        </TabsContent>
+        <TabsContent value="report" className="mt-0">
+          <ReportTab taskId={id} />
         </TabsContent>
       </div>
     </Tabs>
