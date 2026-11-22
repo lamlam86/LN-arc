@@ -7,6 +7,7 @@ loads them per agent according to `agent_skill_visibility`.
 |---|---|
 | `api-recon` | Frontend API reconnaissance: routes, endpoints, parameters, UI triggers. |
 | `google-dork` | Site-scoped Google dorks for indexed docs, configs, backups, panels (manual review, no PII). |
+| `google-dork-pii` | Scoped dork + redacted PII confirmation: counts/masked samples only, no values stored. |
 | `subdomain-enum` | Passive subdomain discovery (DNS, SANs, CT, crawl links). |
 | `dns-recon` | DNS records: A/AAAA, CNAME, MX, NS, TXT/SPF/DMARC, reverse DNS. |
 | `tls-cert-recon` | Certificates, SANs, expiry, protocol and chain inspection. |

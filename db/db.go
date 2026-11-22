@@ -327,6 +327,7 @@ ON CONFLICT DO NOTHING`, r.kind, r.pattern, r.note); err != nil {
 var builtinSkillVisibility = map[string][]string{
 	"api-recon":           {"auto", "pentest", "worker"},
 	"google-dork":         {"auto", "pentest", "worker"},
+	"google-dork-pii":     {"auto", "pentest", "worker"},
 	"subdomain-enum":      {"auto", "pentest", "worker"},
 	"dns-recon":           {"auto", "pentest", "worker"},
 	"tls-cert-recon":      {"auto", "pentest", "worker"},
