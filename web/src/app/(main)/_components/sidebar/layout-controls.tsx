@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type FontKey, fontOptions } from "@/lib/fonts/registry";
 import type { ContentLayout, NavbarStyle, SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
@@ -41,7 +40,7 @@ export function LayoutControls() {
   const setSidebarCollapsible = usePreferencesStore((s) => s.setSidebarCollapsible);
   const font = usePreferencesStore((s) => s.font);
   const setFont = usePreferencesStore((s) => s.setFont);
-  const { night, brightness, setNight, setBrightness } = useDisplaySettings();
+  const { brightness, setBrightness } = useDisplaySettings();
 
   const onThemePresetChange = (preset: ThemePreset) => {
     applyThemePreset(preset);
@@ -258,25 +257,19 @@ export function LayoutControls() {
               </ToggleGroup>
             </div>
 
-            <div className="space-y-2">
-              <Label className="font-medium text-xs">Display</Label>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs">Night light</span>
-                <Switch checked={night} onCheckedChange={setNight} />
+            <div className="space-y-1">
+              <Label className="font-medium text-xs">Brightness</Label>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Screen level</span>
+                <span className="text-muted-foreground tabular-nums">{brightness}%</span>
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span>Brightness</span>
-                  <span className="text-muted-foreground tabular-nums">{brightness}%</span>
-                </div>
-                <Slider
-                  value={[brightness]}
-                  min={60}
-                  max={120}
-                  step={5}
-                  onValueChange={([value]) => setBrightness(value)}
-                />
-              </div>
+              <Slider
+                value={[brightness]}
+                min={60}
+                max={120}
+                step={5}
+                onValueChange={([value]) => setBrightness(value)}
+              />
             </div>
 
             <Button type="button" size="sm" variant="outline" className="w-full text-xs" onClick={handleRestore}>

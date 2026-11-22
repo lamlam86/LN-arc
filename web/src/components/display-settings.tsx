@@ -2,24 +2,19 @@
 
 import * as React from "react";
 
-import { MoonStar, SunMedium } from "lucide-react";
+import { SunMedium } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 
-const NIGHT_KEY = "ln_night_light";
 const BRIGHT_KEY = "ln_brightness";
-
 const MIN_BRIGHTNESS = 60;
 const MAX_BRIGHTNESS = 120;
 
 interface DisplaySettings {
-  night: boolean;
   brightness: number;
-  setNight: (value: boolean) => void;
   setBrightness: (value: number) => void;
 }
 
@@ -31,19 +26,13 @@ function clampBrightness(value: number): number {
 }
 
 export function DisplaySettingsProvider({ children }: { children: React.ReactNode }) {
-  const [night, setNightState] = React.useState(false);
   const [brightness, setBrightnessState] = React.useState(100);
 
   React.useEffect(() => {
-    const storedNight = window.localStorage.getItem(NIGHT_KEY);
-    const storedBrightness = Number(window.localStorage.getItem(BRIGHT_KEY) ?? "100");
-    setNightState(storedNight === "1");
-    setBrightnessState(clampBrightness(storedBrightness));
-  }, []);
-
-  const setNight = React.useCallback((value: boolean) => {
-    setNightState(value);
-    window.localStorage.setItem(NIGHT_KEY, value ? "1" : "0");
+    // Remove the old night-light preference; brightness is the only display setting.
+    window.localStorage.removeItem("ln_night_light");
+    const stored = Number(window.localStorage.getItem(BRIGHT_KEY) ?? "100");
+    setBrightnessState(clampBrightness(stored));
   }, []);
 
   const setBrightness = React.useCallback((value: number) => {
@@ -56,17 +45,8 @@ export function DisplaySettingsProvider({ children }: { children: React.ReactNod
   const brightOpacity = brightness > 100 ? ((brightness - 100) / 100) * 0.35 : 0;
 
   return (
-    <DisplaySettingsContext.Provider value={{ night, brightness, setNight, setBrightness }}>
+    <DisplaySettingsContext.Provider value={{ brightness, setBrightness }}>
       {children}
-      {/* Warm overlay (night light). Above the app, but never blocks input. */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 z-[9998] transition-[background-color] duration-300"
-        style={{
-          backgroundColor: night ? "rgba(255, 154, 54, 0.14)" : "rgba(255, 154, 54, 0)",
-          mixBlendMode: "multiply",
-        }}
-      />
       {/* Brightness overlay: darkens below 100%, lifts above 100%. */}
       <div
         aria-hidden
@@ -88,40 +68,24 @@ export function useDisplaySettings(): DisplaySettings {
 }
 
 export function DisplaySettingsControl() {
-  const { night, brightness, setNight, setBrightness } = useDisplaySettings();
+  const { brightness, setBrightness } = useDisplaySettings();
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          size="icon"
-          variant={night ? "secondary" : "ghost"}
-          aria-label="Night light and brightness"
-          title="Night light and brightness"
-        >
-          {night ? <MoonStar className="size-4 text-amber-300" /> : <SunMedium className="size-4" />}
+        <Button size="icon" variant="ghost" aria-label="Screen brightness" title="Screen brightness">
+          <SunMedium className="size-4" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
-        <div className="space-y-4">
+      <PopoverContent align="end" className="w-64">
+        <div className="space-y-3">
           <div>
-            <h4 className="font-medium text-sm">Display</h4>
-            <p className="text-muted-foreground text-xs">Reduce blue light and adjust brightness.</p>
+            <h4 className="font-medium text-sm">Brightness</h4>
+            <p className="text-muted-foreground text-xs">Adjust the screen brightness of the app.</p>
           </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="night-light" className="text-sm">
-                Night light
-              </Label>
-              <p className="text-muted-foreground text-xs">Warm tint for low-light use.</p>
-            </div>
-            <Switch id="night-light" checked={night} onCheckedChange={setNight} />
-          </div>
-
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm">Brightness</Label>
+              <Label className="text-sm">Level</Label>
               <span className="text-muted-foreground text-xs tabular-nums">{brightness}%</span>
             </div>
             <Slider
