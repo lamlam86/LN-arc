@@ -117,6 +117,32 @@ Outputs:
 - `$OUT/pii-scan.md` — the same, sorted by score, for the report.
 - No response body is saved; full PII values are never emitted.
 
+### Step 3b — Sensitivity assessment (severity + priority)
+
+Turn the counts into a risk judgement for the data owner:
+
+```bash
+python3 "${SKILL_DIR}/scripts/pii_assess.py" \
+  --input "$OUT/pii-scan.json" \
+  --out "$OUT/pii-assessment.md" \
+  --json "$OUT/pii-assessment.json"
+```
+
+Outputs `pii-assessment.md` and `pii-assessment.json` with one row per document:
+
+| Level | Typical case |
+|---|---|
+| **Critical** | ≥10 distinct CCCD/CMND in a list, publicly readable |
+| **High** | ≥3 IDs with list/identity context, or ≥1 ID with list context, or ≥10 phones + names/addresses |
+| **Medium** | contact/identity data with list structure or limited context |
+| **Review** | scanned/image PDF (no text layer) — needs authorized manual review |
+| **Low** | 1–2 incidental contact details, no list/identity |
+| **Info** | no PII counted, or not publicly readable |
+
+The assessment is deterministic triage, not a legal PII classification. It never
+prints values; it uses only `pii-scan.json` counts/labels/structure. Use it as the
+input to the analyst verdict in Step 4 and to the remediation priority in Step 6.
+
 The scanner only performs anonymous `GET`, blocks cross-host redirects outside
 `--site`, and stops reading at `--max-bytes`. `401/403` → `blocked`; do not retry
 with credentials.
@@ -235,6 +261,7 @@ python3 -c "import playwright, pypdf; print('ok')" || {
 - [ ] Dork stayed on the `site:` domain; no other domains were searched.
 - [ ] Every download was anonymous `GET`; `401/403/429` was not bypassed.
 - [ ] No document body and no full PII value in files, facts, or chat.
+- [ ] `pii-assessment.md` exists and its Critical/High rows are prioritised.
 - [ ] Each URL has a final verdict and a confidence; hints are not blindly copied.
 - [ ] Confirmed/probable URLs are registered as assets with a fact.
 - [ ] Remediation and re-verification steps are in the report.
