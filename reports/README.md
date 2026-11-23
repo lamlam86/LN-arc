@@ -18,6 +18,16 @@ Markdown recon reports and the publisher that exposes them in the web UI.
 python reports/sync_web.py
 ```
 
+Or keep it in sync automatically while tasks run:
+
+```bash
+python reports/watch.py
+```
+
+`watch.py` polls the report sources every 5 seconds and republishes whenever a
+task writes a new `recon-report.md`. `npm run dev` also syncs once on startup
+(`predev`), and `npm run sync:reports` runs a one-off sync.
+
 Then open **Tasks → Reports** in the web UI. The report content is bundled into
 the frontend module, so it stays behind the app's authentication proxy and works
 in the static export as well. Reports with both suffixes show a **VI / EN**

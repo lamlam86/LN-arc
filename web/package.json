@@ -3,7 +3,9 @@
   "version": "2.2.0",
   "private": true,
   "scripts": {
+    "predev": "python ../reports/sync_web.py",
     "dev": "next dev",
+    "sync:reports": "python ../reports/sync_web.py",
     "build": "next build",
     "build:static": "NEXT_EXPORT=1 next build",
     "start": "next start",
