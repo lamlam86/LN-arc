@@ -29,6 +29,7 @@ All fields are optional; missing sections render as `not collected`.
 | `auth` | object[] | `surface`, `endpoint`, `behaviour`, `note` |
 | `coverage` | object | `total`, `tested`, `untested`, `untested_assets[]`, `note` |
 | `exposures` | object[] | `severity`, `title`, `url`, `evidence`, `impact`, `remediation` |
+| `google_dork` | object | `engine`, `queries[]` (`query`, `engine`, `results`, `in_scope`, `verification`, `status`, `note`), `findings[]` (`query`, `url`, `type`, `verification`, `status`, `note`), `notes[]` |
 | `traffic` | object[] | `method`, `url`, `status`, `content_type`, `ref` |
 | `timeline` | object[] | `time`, `event` |
 | `assessment` | object | `note`, `risks[]` (`title`, `severity`, `status`, `exploitability`, `action`) |

@@ -40,7 +40,8 @@ no report yet, generate it on the next wake-up before anything else.
 5. **Files on disk**: saved responses, screenshots, transcripts, harvested JS, wordlists used.
 6. **Skills used**: `subdomain-enum`, `dns-recon`, `tls-cert-recon`, `http-fingerprint`,
    `content-discovery`, `port-service-recon`, `js-endpoint-recon`, `traffic-analysis`,
-   `archive-recon`, `cloud-storage-recon`, `visual-recon`, `api-recon`, `exposure-recon`.
+   `archive-recon`, `cloud-storage-recon`, `visual-recon`, `api-recon`, `exposure-recon`,
+   `google-dork`, `google-dork-pii` (results file: `google-dork-results.json`).
 
 Mark every row with its source. Label inferred facts `inferred`; never present them
 as observed.
@@ -66,6 +67,21 @@ them: subdomains/DNS in §4, URL/API/parameter/auth surfaces in §5, risk in §7
 
 Appendix (when large): full endpoint list, full asset list, glossary — attach as
 extra tables at the end without renumbering.
+
+### Google dork / search-engine exposure (inside §7)
+
+When `google-dork` or `google-dork-pii` ran (or `google-dork-results.json` exists),
+add a **Google dork / search-engine exposure** subsection to §7 with:
+
+| Query | Engine | Results reviewed | In-scope hits | Verification | Status | Note |
+|---|---|---|---|---|---|---|
+
+- One row per query; include queries that returned nothing.
+- `findings` (in-scope URLs only): query, URL, type, verification (`HEAD`/small
+  `GET`), status, note. Never list out-of-scope results as findings.
+- If the engine ignored `site:` or returned unrelated results, state that the
+  coverage is **inconclusive**, not clean, and count the noise separately.
+- Do not download documents, bypass CAPTCHA or harvest PII.
 
 ## Subdomains, paths and APIs
 
@@ -130,6 +146,8 @@ assets/endpoints/exposures/assessment. Schema: `scripts/README.md`; start from
 - [ ] Counts reconcile with the asset library and coverage.
 - [ ] Every subdomain/path/API appears in scope.
 - [ ] Parameter analysis covers URL, body, header and cookie inputs.
+- [ ] Google dork results (if run) are in §7 with query, in-scope hits and
+      inconclusive/noise notes.
 - [ ] No secret, token, cookie, private key or PII in the output.
 - [ ] Confirmed vs potential clearly separated.
 - [ ] Untested items listed as gaps with the skill that would cover them.

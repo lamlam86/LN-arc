@@ -205,6 +205,40 @@ def main() -> int:
         out.append("_No public exposure was identified during this run._")
     out.append("")
 
+    gd = m.get("google_dork")
+    if gd:
+        out.append("\n### Google dork / search-engine exposure\n")
+        if gd.get("engine"):
+            out.append(f"**Engine:** {redact(gd['engine'])}\n")
+        queries = gd.get("queries") or []
+        if queries:
+            out.append(
+                "| Query | Engine | Results reviewed | In-scope hits | Verification | Status | Note |\n"
+                "|---|---|---|---|---|---|---|"
+            )
+            for q in queries:
+                out.append(
+                    f"| {cell(q.get('query'))} | {cell(q.get('engine'))} | {cell(q.get('results'))} "
+                    f"| {cell(q.get('in_scope'))} | {cell(q.get('verification'))} | {cell(q.get('status'))} "
+                    f"| {cell(q.get('note'))} |"
+                )
+        hits = gd.get("findings") or []
+        if hits:
+            out.append("\n**In-scope results**\n")
+            out.append("| Query | URL | Type | Verification | Status | Note |\n|---|---|---|---|---|---|")
+            for h in hits:
+                out.append(
+                    f"| {cell(h.get('query'))} | {cell(h.get('url'))} | {cell(h.get('type'))} "
+                    f"| {cell(h.get('verification'))} | {cell(h.get('status'))} | {cell(h.get('note'))} |"
+                )
+        notes = gd.get("notes") or []
+        if notes:
+            out.append("\n")
+            out.append(bullets(notes))
+        if not queries and not hits and not notes:
+            out.append("_not collected_\n")
+        out.append("")
+
     asm = m.get("assessment")
     if asm:
         out.append("\n### Exploitability assessment\n")

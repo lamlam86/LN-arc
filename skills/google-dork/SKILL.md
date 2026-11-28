@@ -69,6 +69,47 @@ Report per finding: URL, type, why it matters, remediation (remove file, block
 path, `X-Robots-Tag: noindex`, Search Console removal), and whether it was
 downloaded (it was not).
 
+## Step 4.1 — Save results for the report
+
+Always write `google-dork-results.json` in the task working directory so the
+`recon-report` skill can publish a **Google dork / search-engine exposure**
+subsection in §7:
+
+```json
+{
+  "engine": "Google",
+  "queries": [
+    {
+      "query": "site:example.com filetype:pdf",
+      "engine": "Google",
+      "results": 12,
+      "in_scope": 2,
+      "verification": "HEAD 200 on both URLs",
+      "status": "2 confirmed public PDFs",
+      "note": "titles/snippets reviewed only"
+    }
+  ],
+  "findings": [
+    {
+      "query": "site:example.com filetype:pdf",
+      "url": "https://example.com/docs/example.pdf",
+      "type": "PDF",
+      "verification": "HEAD 200, application/pdf",
+      "status": "confirmed",
+      "note": "location only; not downloaded"
+    }
+  ],
+  "notes": [
+    "Three queries returned unrelated out-of-scope results; those categories are inconclusive, not clean."
+  ]
+}
+```
+
+Rules:
+- Only in-scope URLs go in `findings`; count noise in `results`/`in_scope`.
+- Record every query, including zero-result ones.
+- If the engine ignored `site:` or returned unrelated results, say so in `notes`.
+
 ## Step 5 — Removal
 
 1. Remove/block the file at the edge.

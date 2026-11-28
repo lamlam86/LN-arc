@@ -62,6 +62,42 @@
       "remediation": "Block /.git/ at the web server and rebuild the deployment without VCS metadata."
     }
   ],
+  "google_dork": {
+    "engine": "Google (manual review)",
+    "queries": [
+      {
+        "query": "site:example.com filetype:pdf",
+        "engine": "Google",
+        "results": 14,
+        "in_scope": 3,
+        "verification": "HEAD 200 on 3 URLs",
+        "status": "3 confirmed public PDFs",
+        "note": "metadata reviewed only; no download"
+      },
+      {
+        "query": "site:example.com (ext:bak OR ext:sql)",
+        "engine": "Google",
+        "results": 9,
+        "in_scope": 0,
+        "verification": "none",
+        "status": "no in-scope results",
+        "note": "engine returned unrelated domains; coverage inconclusive"
+      }
+    ],
+    "findings": [
+      {
+        "query": "site:example.com filetype:pdf",
+        "url": "https://example.com/docs/report-2025.pdf",
+        "type": "PDF",
+        "verification": "HEAD 200, application/pdf",
+        "status": "confirmed",
+        "note": "public document; location only"
+      }
+    ],
+    "notes": [
+      "One query returned out-of-scope noise; that category is inconclusive, not clean."
+    ]
+  },
   "priority_actions": [
     "Block /.git/ and redeploy without VCS metadata.",
     "Review object-reference authorization on /api/v1/users (assessment only, not tested).",
